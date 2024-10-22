@@ -1,11 +1,12 @@
 {
-  "name": "hltv",
-  "version": "3.5.0",
+  "name": "awais-hltv",
+  "version": "1.0.0",
   "description": "The unofficial HLTV Node.js API",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "scripts": {
-    "build": "npx tsc -p tsconfig.release.json",
+    "clean": "rm -rf lib",
+    "build": "npm run clean && npx tsc -p tsconfig.release.json",
     "start": "ts-node src/playground",
     "test": "jest --runInBand",
     "test:approve": "jest --runInBand --updateSnapshot",
@@ -43,9 +44,9 @@
   "author": "Stanislav Iliev",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/awaisanwar12/HLTV-custom-made/issues"
+    "url": "https://github.com/gigobyte/HLTV/issues"
   },
-  "homepage": "https://github.com/awaisanwar12/HLTV-custom-made#readme",
+  "homepage": "https://github.com/gigobyte/HLTV#readme",
   "devDependencies": {
     "@types/cheerio": "0.22.35",
     "@types/jest": "29.5.13",
