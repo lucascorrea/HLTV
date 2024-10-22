@@ -225,7 +225,7 @@ function getVetoes($: HLTVPage, team1?: Team, team2?: Team): Veto[] {
     return {
       team: [team1, team2].find((t) => t!.name === teamName.trim())!,
       map: fromMapName(map.trim()),
-      type: text.includes('picked') ? 'picked' : 'removed'
+      type: text?.includes('picked') ? 'picked' : 'removed'
     } as const
   }
 
@@ -514,7 +514,7 @@ function getHighlights($: HLTVPage, team1?: Team, team2?: Team): Highlight[] {
 function getStatsId($: HLTVPage): number | undefined {
   const statsEl = $('.stats-detailed-stats a')
 
-  if (statsEl.exists() && !statsEl.attr('href').includes('mapstats')) {
+  if (statsEl.exists() && !statsEl.attr('href')?.includes('mapstats')) {
     return getIdAt(3, $('.stats-detailed-stats a').attr('href'))
   }
 }
