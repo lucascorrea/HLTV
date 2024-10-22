@@ -11,7 +11,10 @@
     "test:approve": "jest --runInBand --updateSnapshot",
     "pretty": "prettier --write \"**/*.ts\""
   },
-  "repository": "git+https://github.com/gigobyte/HLTV.git",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awaisanwar12/HLTV-custom-made.git"
+  },
   "keywords": [
     "hltv",
     "api",
@@ -40,9 +43,9 @@
   "author": "Stanislav Iliev",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/gigobyte/HLTV/issues"
+    "url": "https://github.com/awaisanwar12/HLTV-custom-made/issues"
   },
-  "homepage": "https://github.com/gigobyte/HLTV#readme",
+  "homepage": "https://github.com/awaisanwar12/HLTV-custom-made#readme",
   "devDependencies": {
     "@types/cheerio": "0.22.35",
     "@types/jest": "29.5.13",
