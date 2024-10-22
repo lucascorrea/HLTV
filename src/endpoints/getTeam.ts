@@ -109,7 +109,7 @@ export const getTeam =
       name: $('.team-country .flag').attr('alt'),
       code: $('.team-country .flag').attrThen(
         'src',
-        (x) => x.split('/').pop()?.split('.')[0]!
+        (x) => x?.split('/').pop()?.split('.')[0]!
       )
     }
 
