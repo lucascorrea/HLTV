@@ -245,7 +245,7 @@ function getVetoes($: HLTVPage, team1?: Team, team2?: Team): Veto[] {
   //Old format
   if ($('.veto-box').first().exists()) {
     const lines = $('.veto-box').first().lines()
-    const vetoIndex = lines.findIndex((x) => x.includes('Veto process'))
+    const vetoIndex = lines.findIndex((x) => x?.includes('Veto process'))
 
     if (vetoIndex !== -1) {
       return lines.slice(vetoIndex + 2, lines.length - 1).map(getVeto)

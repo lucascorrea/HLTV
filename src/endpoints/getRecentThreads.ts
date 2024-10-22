@@ -32,8 +32,8 @@ export const getRecentThreads =
         const replies = el.contents().last().numFromText()!
         const category = el
           .attr('class')
-          .split(' ')
-          .find((c) => c.includes('Cat'))!
+          ?.split(' ')
+          .find((c) => c?.includes('Cat'))!
           .replace('Cat', '') as ThreadCategory
 
         return { title, link, replies, category }

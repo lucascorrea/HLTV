@@ -12,19 +12,19 @@ export enum MatchFormatLocation {
 }
 
 export const fromFullMatchFormat = (format: string): MatchFormat => {
-  if (format.includes('Best of 1')) {
+  if (format?.includes('Best of 1')) {
     return MatchFormat.BO1
   }
 
-  if (format.includes('Best of 3')) {
+  if (format?.includes('Best of 3')) {
     return MatchFormat.BO3
   }
 
-  if (format.includes('Best of 5')) {
+  if (format?.includes('Best of 5')) {
     return MatchFormat.BO5
   }
 
-  if (format.includes('Best of 7')) {
+  if (format?.includes('Best of 7')) {
     return MatchFormat.BO7
   }
 

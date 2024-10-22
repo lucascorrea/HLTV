@@ -93,9 +93,9 @@ export const getPastEvents =
               code: el
                 .find('.smallCountry img.flag')
                 .attr('src')
-                .split('/')
+                ?.split('/')
                 .pop()!
-                .split('.')[0]
+                ?.split('.')[0]
             }
 
             const prizePool = el.find('.prizePoolEllipsis').text()

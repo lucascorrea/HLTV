@@ -226,7 +226,7 @@ function getRoundHistory(
     .toArray()
     .map(getOutcome)
 
-  const doesTeam1StartAsCt = team1Outcomes[0].outcome.includes('ct')
+  const doesTeam1StartAsCt = team1Outcomes[0].outcome?.includes('ct')
 
   const separatorIndex =
     $('.round-history-team-row .round-history-bar').last().index() - 2

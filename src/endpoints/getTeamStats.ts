@@ -142,7 +142,7 @@ export const getTeamStats =
     const [wins, draws, losses] = overviewStats
       .eq(1)
       .text()
-      .split('/')
+      ?.split('/')
       .map(Number)
 
     const overview = {
@@ -162,7 +162,7 @@ export const getTeamStats =
         const [team1Result, team2Result] = el
           .find('.statsDetail')
           .text()
-          .split(' - ')
+          ?.split(' - ')
 
         return {
           date: getTimestamp(el.find('.time a').text()),
@@ -171,8 +171,8 @@ export const getTeamStats =
               el
                 .find('.image-and-label')
                 .attr('href')!
-                .split('event=')[1]
-                .split('&')[0]
+                ?.split('event=')[1]
+                ?.split('&')[0]
             ),
             name: el.find('.image-and-label img').attr('title')!
           },
@@ -195,7 +195,7 @@ export const getTeamStats =
         return {
           place: el.find('.statsCenterText').text(),
           event: {
-            id: Number(eventEl.attr('href')!.split('event=')[1].split('&')[0]),
+            id: Number(eventEl.attr('href')!?.split('event=')[1]?.split('&')[0]),
             name: eventEl.text()
           }
         }
@@ -212,17 +212,17 @@ export const getTeamStats =
         )
 
         const [wins, draws, losses] = getMapStat(mapEl, 0)
-          .split(' / ')
+         ?.split(' / ')
           .map(Number)
 
         stats[mapName] = {
           wins,
           draws,
           losses,
-          winRate: Number(getMapStat(mapEl, 1).split('%')[0]),
+          winRate: Number(getMapStat(mapEl, 1)?.split('%')[0]),
           totalRounds: Number(getMapStat(mapEl, 2)),
-          roundWinPAfterFirstKill: Number(getMapStat(mapEl, 3).split('%')[0]),
-          roundWinPAfterFirstDeath: Number(getMapStat(mapEl, 4).split('%')[0])
+          roundWinPAfterFirstKill: Number(getMapStat(mapEl, 3)?.split('%')[0]),
+          roundWinPAfterFirstDeath: Number(getMapStat(mapEl, 4)?.split('%')[0])
         }
 
         return stats

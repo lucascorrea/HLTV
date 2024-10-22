@@ -122,9 +122,11 @@ export const getPlayerStats =
 
     const imageUrl =
       $('.summaryBodyshot').attr('src') || $('.summarySquare').attr('src')
-    const image = imageUrl.includes('bodyshot/unknown.png')
-      ? undefined
-      : imageUrl
+    const image =
+      imageUrl?.includes('bodyshot/unknown.png') ||
+      imageUrl?.includes('static/player/player_silhouette.png')
+        ? undefined
+        : imageUrl
 
     const age = $('.summaryPlayerAge').textThen((x) =>
       parseNumber(x.split(' ')[0])
@@ -149,7 +151,7 @@ export const getPlayerStats =
     const getOverviewStats = (label: string): number | undefined => {
       const lbl = label.toLowerCase()
       const row = $('.stats-row').filter((_, x) =>
-        x.text().toLowerCase().includes(lbl)
+        x?.text()?.toLowerCase()?.includes(lbl)
       )
       if (row.exists()) {
         return Number(row.find('span').eq(1).text().replace('%', ''))
@@ -178,7 +180,7 @@ export const getPlayerStats =
     const getIndivialStats = (label: string): number => {
       const lbl = label.toLowerCase()
       const row = i$('.stats-row').filter((_, x) =>
-        x.text().toLowerCase().includes(lbl)
+        x?.text()?.toLowerCase()?.includes(lbl)
       )
       return Number(row.find('span').eq(1).text().replace('%', ''))
     }

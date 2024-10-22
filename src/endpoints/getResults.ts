@@ -102,7 +102,7 @@ export const getResults =
           .map((el) => {
             const id = el.children().first().attrThen('href', getIdAt(2))!
 
-            if (featuredResults.includes(id)) {
+            if (featuredResults?.includes(id)) {
               featuredResults = featuredResults.filter((x) => x !== id)
               return null
             }
@@ -134,7 +134,7 @@ export const getResults =
               team1,
               team2,
               result: { team1: team1Result, team2: team2Result },
-              ...(format.includes('bo')
+              ...(format?.includes('bo')
                 ? { format }
                 : { map: fromMapSlug(format), format: 'bo1' })
             }

@@ -63,7 +63,7 @@ export const getEvents =
           .last()
           .numFromAttr('data-unix')!
 
-        const featured = featuredOngoingEvents.includes(id)
+        const featured = featuredOngoingEvents?.includes(id)
 
         return { id, name, dateStart, dateEnd, featured }
       })

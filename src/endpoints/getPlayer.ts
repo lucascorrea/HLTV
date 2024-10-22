@@ -62,13 +62,13 @@ export const getPlayer =
       $('.profile-img').attr('src') || $('.bodyshot-img').attr('src')
 
     const image =
-      imageUrl.includes('bodyshot/unknown.png') ||
-      imageUrl.includes('static/player/player_silhouette.png')
+      imageUrl?.includes('bodyshot/unknown.png') ||
+      imageUrl?.includes('static/player/player_silhouette.png')
         ? undefined
         : imageUrl
 
     const age = $('.playerAge .listRight').textThen((x) =>
-      parseNumber(x.split(' ')[0])
+      parseNumber(x?.split(' ')[0])
     )
 
     const twitter = $('.twitter').parent().attr('href')
@@ -80,7 +80,7 @@ export const getPlayer =
       name: $('.playerRealname .flag').attr('alt')!,
       code: $('.playerRealname .flag').attrThen(
         'src',
-        (x) => x.split('/').pop()?.split('.')[0]!
+        (x) => x?.split('/').pop()?.split('.')[0]!
       )
     }
 
