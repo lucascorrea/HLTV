@@ -93,9 +93,9 @@ export const getEvents =
                 code: el
                   .find('.location-top-teams img.flag')
                   .attr('src')
-                  .split('/')
+                  ?.split('/')
                   .pop()!
-                  .split('.')[0]
+                  ?.split('.')[0]
               }
             : undefined
 
@@ -149,9 +149,9 @@ export const getEvents =
           code: el
             .find('.smallCountry img.flag')
             .attr('src')
-            .split('/')
+            ?.split('/')
             .pop()!
-            .split('.')[0]
+            ?.split('.')[0]
         }
 
         const prizePool = el.find('.prizePoolEllipsis').text()

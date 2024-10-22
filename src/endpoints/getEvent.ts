@@ -81,7 +81,7 @@ export const getEvent =
 
     const location = {
       name: $('.location span.text-ellipsis').text(),
-      code: $('img.flag').attr('src').split('/').pop()!.split('.')[0]
+      code: $('img.flag').attr('src')?.split('/').pop()!?.split('.')[0]
     }
 
     const relatedEvents = $('.related-event')
@@ -141,7 +141,7 @@ export const getEvent =
       .toArray()
       .map((el) => ({
         type: el.find('.format-header').text(),
-        description: el.find('.format-data').text().split('\n').join(' ').trim()
+        description: el.find('.format-data').text()?.split('\n').join(' ').trim()
       }))
 
     const mapPool = $('.map-pool-map-holder')
@@ -154,7 +154,7 @@ export const getEvent =
         const name = el.find('.video-discription-text').text()
         const link = el.data('mp4-url')
 
-        const [thumbnailBase] = el.data('thumbnail').split('-preview-')
+        const [thumbnailBase] = el.data('thumbnail')?.split('-preview-')
         const thumbnail = `${thumbnailBase}-preview.jpg`
 
         const team1Name = el
@@ -174,7 +174,7 @@ export const getEvent =
         const team2 = teams.find((x) => x.name === team2Name)
 
         const views = Number(
-          el.find('.thumbnail-view-count').text().split(' ')[0]
+          el.find('.thumbnail-view-count').text()?.split(' ')[0]
         )
 
         return {
