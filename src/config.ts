@@ -1,6 +1,6 @@
 import { Agent as HttpsAgent } from 'https'
 import { Agent as HttpAgent } from 'http'
-import axios from 'axios'
+import { gotScraping } from 'got-scraping'
 
 export interface HLTVConfig {
   loadPage: (url: string) => Promise<string>
@@ -9,11 +9,14 @@ export interface HLTVConfig {
 
 export const defaultLoadPage =
   (httpAgent: HttpsAgent | HttpAgent | undefined) => async (url: string) => {
-    const response = await axios.get(url, {
-      httpAgent: httpAgent,
-      httpsAgent: httpAgent
+    const response = await gotScraping({
+      url,
+      agent: {
+        http: httpAgent as HttpAgent | undefined,
+        https: httpAgent as HttpsAgent | undefined
+      }
     });
-    return response.data;
+    return response.body;
   };
 
 const defaultAgent = new HttpsAgent()
