@@ -44,11 +44,7 @@ export const getTeam =
 
     const name = $('.profile-team-name').text()
     const logoSrc = $('.teamlogo').attr('src')
-    let logo = '' // Default to an empty string
-
-    if (logoSrc && typeof logoSrc === 'string' && !logoSrc.includes('placeholder.svg')) {
-      logo = logoSrc
-    }
+    const logo = logoSrc && !logoSrc.includes('placeholder.svg') ? logoSrc : '';
     const facebook = $('.facebook').parent().attr('href')
     const twitter = $('.twitter').parent().attr('href')
     const instagram = $('.instagram').parent().attr('href')
