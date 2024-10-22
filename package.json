@@ -1,6 +1,6 @@
 {
   "name": "awais-hltv",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "The unofficial HLTV Node.js API",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -41,7 +41,7 @@
       "node"
     ]
   },
-  "author": "Stanislav Iliev",
+  "author": "Awais Anwar",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/gigobyte/HLTV/issues"
