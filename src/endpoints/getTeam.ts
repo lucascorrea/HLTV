@@ -123,7 +123,7 @@ export const getTeam =
     return {
       id,
       name,
-      logo,
+      // logo,
       facebook,
       twitter,
       instagram,
