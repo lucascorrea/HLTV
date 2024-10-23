@@ -106,11 +106,13 @@ export const getTeam =
     }
 
     const country = {
-      name: $('.team-country .flag').attr('alt'),
-      code: $('.team-country .flag').attrThen(
-        'src',
-        (x) => x?.split('/').pop()?.split('.')[0]!
-      )
+      name: $('.team-country .flag').attr('alt') || 'Unknown', // Default to 'Unknown' if undefined
+      code: $('.team-country .flag').attrThen('src', (x) => {
+        if (x && typeof x === 'string') {
+          return x.split('/').pop()?.split('.')[0] || 'unknown'; // Default to 'unknown' if split fails
+        }
+        return 'unknown'; // Default to 'unknown' if x is undefined
+      })
     }
 
     const news = $('#newsBox a')
