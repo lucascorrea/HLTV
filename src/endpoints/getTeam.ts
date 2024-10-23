@@ -107,14 +107,16 @@ export const getTeam =
 
     const country = {
       name: $('.team-country .flag').attr('alt') || 'Unknown', // Default to 'Unknown' if undefined
-      code: $('.team-country .flag').attrThen('src', function (x) {
-        if (x && typeof x === 'string') {
-          const parts = x.split('/');
+      code: (() => {
+        const src = $('.team-country .flag').attr('src');
+        console.log('Flag src:', src); // Debugging log to check the value of src
+        if (src && typeof src === 'string') {
+          const parts = src.split('/');
           const lastPart = parts.pop();
           return lastPart ? lastPart.split('.')[0] : 'unknown'; // Default to 'unknown' if split fails
         }
-        return 'unknown'; // Default to 'unknown' if x is undefined
-      })
+        return 'unknown'; // Default to 'unknown' if src is undefined
+      })()
     }
 
     const news = $('#newsBox a')
