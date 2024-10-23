@@ -107,9 +107,11 @@ export const getTeam =
 
     const country = {
       name: $('.team-country .flag').attr('alt') || 'Unknown', // Default to 'Unknown' if undefined
-      code: $('.team-country .flag').attrThen('src', (x) => {
+      code: $('.team-country .flag').attrThen('src', function (x) {
         if (x && typeof x === 'string') {
-          return x.split('/').pop()?.split('.')[0] || 'unknown'; // Default to 'unknown' if split fails
+          const parts = x.split('/');
+          const lastPart = parts.pop();
+          return lastPart ? lastPart.split('.')[0] : 'unknown'; // Default to 'unknown' if split fails
         }
         return 'unknown'; // Default to 'unknown' if x is undefined
       })
