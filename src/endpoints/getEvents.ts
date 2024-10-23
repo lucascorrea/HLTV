@@ -90,14 +90,9 @@ export const getEvents =
           locationName !== 'TBA'
             ? {
                 name: locationName,
-                code: el
-                  .find('.location-top-teams img.flag')
-                  .attr('src')
-                  ?.split('/')
-                  .pop()!
-                  ?.split('.')[0]
+                
               }
-            : undefined
+            : { name: '' } // Return an object with an empty name property
 
         const prizePool = el
           .find('.additional-info tr')
@@ -146,12 +141,7 @@ export const getEvents =
 
         const location = {
           name: el.find('.smallCountry .col-desc').text().replace(' | ', ''),
-          code: el
-            .find('.smallCountry img.flag')
-            .attr('src')
-            ?.split('/')
-            .pop()!
-            ?.split('.')[0]
+          
         }
 
         const prizePool = el.find('.prizePoolEllipsis').text()

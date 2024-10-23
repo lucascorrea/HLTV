@@ -42,20 +42,20 @@ export interface FullEventHighlight {
 
 export interface FullEvent {
   id: number
-  name: string
-  logo: string
+  name?: string
+  logo?: string
   dateStart?: number
   dateEnd?: number
-  prizePool: string
-  location: Country
+  prizePool?: string
+  location?: Country
   numberOfTeams?: number
-  teams: FullEventTeam[]
-  prizeDistribution: FullEventPrizeDistribution[]
-  relatedEvents: Event[]
-  formats: FullEventFormat[]
-  mapPool: GameMap[]
-  highlights: FullEventHighlight[]
-  news: Article[]
+  teams?: FullEventTeam[]
+  prizeDistribution?: FullEventPrizeDistribution[]
+  relatedEvents?: Event[]
+  formats?: FullEventFormat[]
+  mapPool?: GameMap[]
+  highlights?: FullEventHighlight[]
+  news?: Article[]
 }
 
 export const getEvent =
@@ -80,8 +80,8 @@ export const getEvent =
       .numFromAttr('data-unix')
 
     const location = {
-      name: $('.location span.text-ellipsis').text(),
-      code: $('img.flag').attr('src')?.split('/').pop()!?.split('.')[0]
+      name: $('.location span.text-ellipsis').text() || 'Unknown', // Default to 'Unknown' if undefined
+      // Remove the code extraction logic
     }
 
     const relatedEvents = $('.related-event')
