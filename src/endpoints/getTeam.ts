@@ -21,7 +21,7 @@ export interface FullTeamPlayer extends Player {
 export interface FullTeam {
   id: number
   name: string
-  logo?: string
+  // logo?: string
   facebook?: string
   twitter?: string
   instagram?: string
