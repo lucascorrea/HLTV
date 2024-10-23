@@ -37,9 +37,7 @@ export const getStreams =
 
           const country: Country = {
             name: el.find('.streams-flag').attr('title'),
-            code: el
-              .find('.streams-flag')
-              .attrThen('src', (x) => x?.split('/').pop()?.split('.')[0]!)
+           
           }
 
           const viewers = el
