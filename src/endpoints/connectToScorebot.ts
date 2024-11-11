@@ -211,7 +211,7 @@ export const connectToScorebot =
     ).then(($) => {
       const url = $('#scoreboardElement')
         .attr('data-scorebot-url')!
-        .split(',')
+        ?.split(',')
         .pop()!
       const matchId = $('#scoreboardElement').attr('data-scorebot-id')
 

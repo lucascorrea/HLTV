@@ -157,7 +157,7 @@ export const getTeamStats =
       .toArray()
       .map((el) => {
         const statsDetailText = el.find('.statsDetail').text();
-        const [team1Result, team2Result] = statsDetailText ? statsDetailText.split(' - ') : [undefined, undefined];
+        const [team1Result, team2Result] = statsDetailText ? statsDetailText.split(' - ').map(Number) : [0, 0];
 
         return {
           date: getTimestamp(el.find('.time a').text()),
@@ -207,7 +207,7 @@ export const getTeamStats =
         )
 
         const mapStatText = getMapStat(mapEl, 0);
-        const [wins, draws, losses] = mapStatText ? mapStatText?.split(' / ').map(Number) : [undefined, undefined, undefined];
+        const [wins, draws, losses] = mapStatText ? mapStatText.split(' / ').map(Number) : [0, 0, 0];
 
         stats[mapName] = {
           wins,
