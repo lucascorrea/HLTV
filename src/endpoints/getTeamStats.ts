@@ -139,11 +139,8 @@ export const getTeamStats =
 
     const overviewStats = $('.standard-box .large-strong')
 
-    const [wins, draws, losses] = overviewStats
-      .eq(1)
-      .text()
-      ?.split('/')
-      .map(Number)
+    const overviewText = overviewStats.eq(1).text();
+    const [wins, draws, losses] = overviewText ? overviewText.split('/').map(Number) : [0, 0, 0];
 
     const overview = {
       mapsPlayed: overviewStats.eq(0).numFromText()!,
@@ -151,9 +148,9 @@ export const getTeamStats =
       totalDeaths: overviewStats.eq(3).numFromText()!,
       roundsPlayed: overviewStats.eq(4).numFromText()!,
       kdRatio: overviewStats.eq(5).numFromText()!,
-      wins,
-      draws,
-      losses
+      wins: wins ?? 0,
+      draws: draws ?? 0,
+      losses: losses ?? 0
     }
 
     const matches = m$('.stats-table tbody tr')
@@ -211,9 +208,8 @@ export const getTeamStats =
           mapEl.prev().find('.map-pool-map-name').text()
         )
 
-        const [wins, draws, losses] = getMapStat(mapEl, 0)
-         ?.split(' / ')
-          .map(Number)
+        const mapStatText = getMapStat(mapEl, 0);
+        const [wins, draws, losses] = mapStatText ? mapStatText.split(' / ').map(Number) : [undefined, undefined, undefined];
 
         stats[mapName] = {
           wins,

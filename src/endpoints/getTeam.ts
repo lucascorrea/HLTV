@@ -48,9 +48,8 @@ export const getTeam =
     const facebook = $('.facebook').parent().attr('href')
     const twitter = $('.twitter').parent().attr('href')
     const instagram = $('.instagram').parent().attr('href')
-    const rank = parseNumber(
-      $('.profile-team-stat .right').first().text().replace('#', '')
-    )
+    const rankText = $('.profile-team-stat .right').first().text();
+    const rank = rankText ? parseNumber(rankText.replace('#', '')) : undefined;
 
     const players = $('.players-table tbody tr')
       .toArray()
