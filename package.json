@@ -1,7 +1,7 @@
 {
   "name": "awais-hltv",
-  "version": "1.0.23",
-  "description": "The unofficial HLTV Node.js API",
+  "version": "1.0.24",
+  "description": "The unofficial HLTV Node.js API by (https://www.linkedin.com/in/awaisanwar12/)",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "scripts": {

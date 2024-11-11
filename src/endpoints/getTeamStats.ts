@@ -140,7 +140,7 @@ export const getTeamStats =
     const overviewStats = $('.standard-box .large-strong')
 
     const overviewText = overviewStats.eq(1).text();
-    const [wins, draws, losses] = overviewText ? overviewText.split('/').map(Number) : [0, 0, 0];
+    const [wins, draws, losses] = overviewText ? overviewText?.split('/').map(Number) : [0, 0, 0];
 
     const overview = {
       mapsPlayed: overviewStats.eq(0).numFromText()!,
@@ -156,10 +156,8 @@ export const getTeamStats =
     const matches = m$('.stats-table tbody tr')
       .toArray()
       .map((el) => {
-        const [team1Result, team2Result] = el
-          .find('.statsDetail')
-          .text()
-          ?.split(' - ')
+        const statsDetailText = el.find('.statsDetail').text();
+        const [team1Result, team2Result] = statsDetailText ? statsDetailText.split(' - ') : [undefined, undefined];
 
         return {
           date: getTimestamp(el.find('.time a').text()),
@@ -209,7 +207,7 @@ export const getTeamStats =
         )
 
         const mapStatText = getMapStat(mapEl, 0);
-        const [wins, draws, losses] = mapStatText ? mapStatText.split(' / ').map(Number) : [undefined, undefined, undefined];
+        const [wins, draws, losses] = mapStatText ? mapStatText?.split(' / ').map(Number) : [undefined, undefined, undefined];
 
         stats[mapName] = {
           wins,
@@ -256,7 +254,7 @@ function getPlayersByContainer(container: HLTVPageElement) {
 }
 
 function getTimestamp(source: string): number {
-  const [day, month, year] = source.split('/')
+  const [day, month, year] = source?.split('/') ?? [];
 
   return new Date([month, day, year].join('/')).getTime()
 }

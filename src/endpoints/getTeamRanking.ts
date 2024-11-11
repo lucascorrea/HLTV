@@ -47,10 +47,8 @@ export const getTeamRanking =
     if (country) {
       const redirectedLink = $('.ranking-country > a').first().attr('href')
       const countryRankingLink = redirectedLink
-        ?.split('/')
-        .slice(0, -1)
-        .concat(country)
-        .join('/')
+        ? redirectedLink?.split('/').slice(0, -1).concat(country).join('/')
+        : undefined
 
       $ = HLTVScraper(
         await fetchPage(
