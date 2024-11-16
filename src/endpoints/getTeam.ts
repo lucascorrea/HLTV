@@ -54,6 +54,7 @@ export const getTeam =
     const players = $('.players-table tbody tr')
       .toArray()
       .map((el) => ({
+        photo: el.find('.playersBox-img-wrapper img').attr('src') || '',
         name: el
           .find(
             '.playersBox-playernick-image .playersBox-playernick .text-ellipsis'
@@ -70,6 +71,7 @@ export const getTeam =
         ...($('.coach-table').exists()
           ? [
               {
+                photo: $('.coach-table .playersBox-img-wrapper img').attr('src') || '',
                 id: $('.coach-table .playersBox-playernick-image').attrThen(
                   'href',
                   getIdAt(2)
