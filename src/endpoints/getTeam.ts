@@ -21,7 +21,7 @@ export interface FullTeamPlayer extends Player {
 export interface FullTeam {
   id: number
   name: string
-  // logo?: string
+  logo?: string
   facebook?: string
   twitter?: string
   instagram?: string
@@ -43,8 +43,8 @@ export const getTeam =
     )
 
     const name = $('.profile-team-name').text()
-    // const logoSrc = $('.teamlogo').attr('src') || ''; // Default to an empty string if undefined
-    // const logo = !logoSrc?.includes('placeholder.svg') ? logoSrc : '';
+    const logoSrc = $('.teamlogo').attr('src') || ''; // Default to an empty string if undefined
+    const logo = !logoSrc?.includes('placeholder.svg') ? logoSrc : '';
     const facebook = $('.facebook').parent().attr('href')
     const twitter = $('.twitter').parent().attr('href')
     const instagram = $('.instagram').parent().attr('href')
@@ -118,7 +118,7 @@ export const getTeam =
     return {
       id,
       name,
-      // logo,
+      logo,
       facebook,
       twitter,
       instagram,
