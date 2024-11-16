@@ -84,18 +84,34 @@ export const getMatches =
         let team2
 
         if (!title) {
+          var logo1 = ''
+          var logo2 = ''
+          if (el.find('.matchTeamLogo').length == 3) {
+            const logoSrc1 = el.find('.matchTeamLogo').eq(1).attr('src') || 'https://www.hltv.org/img/static/team/placeholder.svg';
+            logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : 'https://www.hltv.org/img/static/team/placeholder.svg';
+            const logoSrc2 = el.find('.matchTeamLogo').eq(2).attr('src') || 'https://www.hltv.org/img/static/team/placeholder.svg';
+            logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : 'https://www.hltv.org/img/static/team/placeholder.svg';
+          } else {
+            const logoSrc1 = el.find('.matchTeamLogo').first().attr('src') || 'https://www.hltv.org/img/static/team/placeholder.svg';
+            logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : 'https://www.hltv.org/img/static/team/placeholder.svg';
+            const logoSrc2 = el.find('.matchTeamLogo').eq(1).attr('src') || 'https://www.hltv.org/img/static/team/placeholder.svg';
+            logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : 'https://www.hltv.org/img/static/team/placeholder.svg';
+          }
+          
           team1 = {
             name:
               el.find('.matchTeamName').first().text() ||
               el.find('.team1 .team').text(),
-            id: el.numFromAttr('team1')
+            id: el.numFromAttr('team1'),
+            logo: logo1
           }
 
           team2 = {
             name:
               el.find('.matchTeamName').eq(1).text() ||
               el.find('.team2 .team').text(),
-            id: el.numFromAttr('team2')
+            id: el.numFromAttr('team2'),
+            logo: logo2
           }
         }
 
