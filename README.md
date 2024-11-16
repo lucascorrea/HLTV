@@ -1,9 +1,6 @@
-<h1 align="center">
-  <img src="https://www.hltv.org/img/static/TopLogo2x.png" alt="HLTV logo" width="200">
-  <br>
-  The unofficial HLTV Node.js API
-  <br>
-</h1>
+[![NPM](https://www.hltv.org/img/static/TopLogo2x.png)](https://www.hltv.org/img/static/TopLogo2x.png)
+The unofficial HLTV Node.js API
+
 
 Table of contents
 
