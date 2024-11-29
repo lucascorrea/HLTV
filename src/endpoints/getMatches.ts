@@ -116,6 +116,7 @@ export const getMatches =
           // }
           
           team1 = {
+            test: 1,
             name:
               el.find('.matchTeamName').first().text() ||
               el.find('.team1 .team').text(),
@@ -124,6 +125,7 @@ export const getMatches =
           }
 
           team2 = {
+            test: 1,
             name:
               el.find('.matchTeamName').eq(1).text() ||
               el.find('.team2 .team').text(),
