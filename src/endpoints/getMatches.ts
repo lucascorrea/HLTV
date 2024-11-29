@@ -86,17 +86,34 @@ export const getMatches =
         if (!title) {
           var logo1 = ''
           var logo2 = ''
-          if (el.find('.matchTeamLogo').length == 3) {
-            const logoSrc1 = el.find('.matchTeamLogo').eq(1).attr('src') || 'https://www.hltv.org/img/static/team/placeholder.svg';
-            logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : 'https://www.hltv.org/img/static/team/placeholder.svg';
-            const logoSrc2 = el.find('.matchTeamLogo').eq(2).attr('src') || 'https://www.hltv.org/img/static/team/placeholder.svg';
-            logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : 'https://www.hltv.org/img/static/team/placeholder.svg';
+
+          if (el.find('.matchTeam.team1 .matchTeamLogo').length == 2) {
+            const logoSrc1 = el.find('.matchTeam.team1 .matchTeamLogo').eq(1).attr('src') || '';
+            logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
           } else {
-            const logoSrc1 = el.find('.matchTeamLogo').first().attr('src') || 'https://www.hltv.org/img/static/team/placeholder.svg';
-            logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : 'https://www.hltv.org/img/static/team/placeholder.svg';
-            const logoSrc2 = el.find('.matchTeamLogo').eq(1).attr('src') || 'https://www.hltv.org/img/static/team/placeholder.svg';
-            logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : 'https://www.hltv.org/img/static/team/placeholder.svg';
+            const logoSrc1 = el.find('.matchTeam.team1 .matchTeamLogo').first().attr('src') || '';
+            logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
           }
+
+          if (el.find('.matchTeam.team2 .matchTeamLogo').length == 2) {
+            const logoSrc2 = el.find('.matchTeam.team2 .matchTeamLogo').eq(1).attr('src') || '';
+            logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
+          } else {
+            const logoSrc2 = el.find('.matchTeam.team2 .matchTeamLogo').first().attr('src') || '';
+            logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
+          }
+
+          // if (el.find('.matchTeamLogo').length == 3) {
+          //   const logoSrc1 = el.find('.matchTeamLogo').eq(1).attr('src') || '';
+          //   logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
+          //   const logoSrc2 = el.find('.matchTeamLogo').eq(2).attr('src') || '';
+          //   logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
+          // } else {
+          //   const logoSrc1 = el.find('.matchTeamLogo').first().attr('src') || '';
+          //   logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
+          //   const logoSrc2 = el.find('.matchTeamLogo').eq(1).attr('src') || '';
+          //   logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
+          // }
           
           team1 = {
             name:
