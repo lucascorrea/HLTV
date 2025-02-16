@@ -16,6 +16,7 @@ import {
   MatchFormat,
   MatchFormatLocation
 } from '../shared/MatchFormat'
+import { ResultMatch } from '../shared/ResultMatch'
 
 export enum MatchStatus {
   Live = 'Live',
@@ -95,6 +96,7 @@ export interface FullMatch {
   hasScorebot: boolean
   team1?: FullMatchTeam
   team2?: FullMatchTeam
+  resultMatch: ResultMatch
   winnerTeam?: FullMatchTeam
   vetoes: Veto[]
   event: Event
@@ -147,6 +149,7 @@ export const getMatch =
     const highlights = getHighlights($, team1, team2)
     const playerOfTheMatch = getPlayerOfTheMatch($, players)
     const winnerTeam = getWinnerTeam($, team1, team2)
+    const resultMatch = countMapWins(maps)
 
     return {
       id,
@@ -154,6 +157,7 @@ export const getMatch =
       significance,
       team1,
       team2,
+      resultMatch,
       winnerTeam,
       date,
       format,
@@ -202,6 +206,7 @@ function getTeam($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined {
         id: $(`.team${n}-gradient a`).attrThen('href', (href) =>
           href ? getIdAt(2, href) : undefined
         ),
+        logo: $(`.team${n}-gradient img`).attr('src'),
         rank: $('.teamRanking a')
           .eq(n - 1)
           .contents()
@@ -313,6 +318,22 @@ function getCommunityOdds($: HLTVPage): ProviderOdds | undefined {
       )
     }
   }
+}
+
+function countMapWins(maps: MapResult[]): { team1Win: number; team2Win: number } {
+  return maps.reduce(
+    (acc, map) => {
+      if (map.statsId && map.result) {
+        if (map.result.team1TotalRounds > map.result.team2TotalRounds) {
+          acc.team1Win += 1;
+        } else if (map.result.team2TotalRounds > map.result.team1TotalRounds) {
+          acc.team2Win += 1;
+        }
+      }
+      return acc;
+    },
+    { team1Win: 0, team2Win: 0 }
+  );
 }
 
 function getMaps($: HLTVPage): MapResult[] {
