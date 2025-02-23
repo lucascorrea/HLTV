@@ -388,28 +388,28 @@ function getMaps($: HLTVPage): MapResult[] {
 }
 
 function getPlayers($: HLTVPage) {
-  const getMatchPlayer = (playerEl: HLTVPageElement): Player => {
-    return {
-      name: playerEl.find('.text-ellipsis').text(),
-      id: playerEl.data('player-id')
-    }
+  const getTeamPlayers = (teamDiv: HLTVPageElement) => {
+    const trs = teamDiv.find('tr');
+    const imagesRow = trs.first();
+    const dataRow = trs.last();
+    
+    return dataRow
+      .find('.flagAlign')
+      .toArray()
+      .map((playerEl, i) => {
+        const photoEl = imagesRow.children().eq(i).find('img');
+        
+        return {
+          photo: photoEl.attr('src') || '',
+          name: playerEl.find('.text-ellipsis').text(),
+          id: playerEl.data('player-id')
+        }
+      });
   }
 
   return {
-    team1: $('div.players')
-      .first()
-      .find('tr')
-      .last()
-      .find('.flagAlign')
-      .toArray()
-      .map(getMatchPlayer),
-    team2: $('div.players')
-      .eq(1)
-      .find('tr')
-      .last()
-      .find('.flagAlign')
-      .toArray()
-      .map(getMatchPlayer)
+    team1: getTeamPlayers($('div.players').first()),
+    team2: getTeamPlayers($('div.players').eq(1))
   }
 }
 
@@ -478,12 +478,14 @@ function getHighlightedPlayers($: HLTVPage) {
   return highlightedPlayer1.exists() && highlightedPlayer2.exists()
     ? {
         team1: {
+          photo: '',
           name: $('.lineups-compare-left .lineups-compare-playername').text(),
           id: $('.lineups-compare-left .lineups-compare-player-links a')
             .first()
             .attrThen('href', getIdAt(2))
         },
         team2: {
+          photo: '',
           name: $('.lineups-compare-right .lineups-compare-playername').text(),
           id: $('.lineups-compare-right .lineups-compare-player-links a')
             .first()

@@ -80,7 +80,7 @@ export const getTeamStats =
     )
 
     const name = $('.context-item-name').last().text()
-    const currentTeam = { id: options.id, name }
+    const currentTeam = { photo: '', id: options.id, name }
 
     const currentLineup = getPlayersByContainer(
       getContainerByText($, 'Current lineup')
@@ -248,6 +248,7 @@ function getPlayersByContainer(container: HLTVPageElement) {
     .find('.image-and-label')
     .toArray()
     .map((el) => ({
+      photo: '',
       id: el.attrThen('href', getIdAt(3)),
       name: el.find('.text-ellipsis').text()
     }))

@@ -16,6 +16,7 @@ export interface HLTVPageElement {
   find(selector: string): HLTVPageElement
   attr(attr: string): string
   text(): string
+  html(): string
   textThen<T>(then: (value: string) => T): T
   first(): HLTVPageElement
   last(): HLTVPageElement
@@ -37,6 +38,10 @@ export interface HLTVPageElement {
 const attachMethods = (root: cheerio.Cheerio): HLTVPageElement => {
   const obj: HLTVPageElement = {
     length: root.length,
+
+    html(): string {
+      return root.html() ?? ''
+    },
 
     find(selector: string): HLTVPageElement {
       return attachMethods(root.find(selector))
