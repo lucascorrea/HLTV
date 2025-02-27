@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio'
 import { randomUUID } from 'crypto'
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+const fs = require('fs');
 
 puppeteer.use(StealthPlugin());
 
@@ -36,6 +37,16 @@ export const fetchPage = async (
     if (foundError) {
       throw new Error(`Access denied 1 | www.hltv.org used Cloudflare to restrict access.`);
     }
+
+    // console.log(html)
+
+  //   fs.writeFile('arquivo.txt', html, 'utf8', (err: NodeJS.ErrnoException | null) => {
+  //     if (err) {
+  //         console.error("Erro ao salvar o arquivo:", err);
+  //         return;
+  //     }
+  //     console.log("Arquivo salvo com sucesso!");
+  // });
 
     return cheerio.load(html);
   } catch (error) {
