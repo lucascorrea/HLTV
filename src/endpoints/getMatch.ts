@@ -42,6 +42,12 @@ export interface Veto {
   type: 'removed' | 'picked' | 'leftover'
 }
 
+export interface HeadToHead {
+  team1Win: number
+  team2Win: number
+  overtimes: number
+  list: HeadToHeadResult[]
+}
 export interface HeadToHeadResult {
   date: number
   /** This property is undefined when the match resulted in a draw */
@@ -112,7 +118,7 @@ export interface FullMatch {
     team1: Player
     team2: Player
   }
-  headToHead: HeadToHeadResult[]
+  headToHead: HeadToHead
   highlights: Highlight[]
   playerOfTheMatch?: Player
 }
@@ -206,7 +212,7 @@ function getTeam($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined {
         id: $(`.team${n}-gradient a`).attrThen('href', (href) =>
           href ? getIdAt(2, href) : undefined
         ),
-        logo: $(`.team${n}-gradient img`).attr('src'),
+        logo: $(`.team${n}-gradient img.night-only`).attr('src') || $(`.team${n}-gradient img:not(.day-only)`).attr('src'),
         rank: $('.teamRanking a')
           .eq(n - 1)
           .contents()
@@ -495,8 +501,8 @@ function getHighlightedPlayers($: HLTVPage) {
     : undefined
 }
 
-function getHeadToHead($: HLTVPage): HeadToHeadResult[] {
-  return $('.head-to-head-listing tr')
+function getHeadToHead($: HLTVPage): HeadToHead {
+  const headToHead = $('.head-to-head-listing tr')
     .toArray()
     .map((matchEl) => {
       const date = Number(matchEl.find('.date a span').attr('data-unix'))
@@ -521,6 +527,16 @@ function getHeadToHead($: HLTVPage): HeadToHeadResult[] {
 
       return { date, map, winner, event, result }
     })
+
+  // Extrair informações do head-to-head box
+  const headToHeadBox = $('.head-to-head .standard-box');
+  
+  return {
+    team1Win: headToHeadBox.find('.right-border .bold').numFromText() ?? 0,
+    team2Win: headToHeadBox.find('.left-border .bold').numFromText() ?? 0,
+    overtimes: headToHeadBox.find('.flexbox-column:nth-child(3) .bold').numFromText() ?? 0,
+    list: headToHead
+  }
 }
 
 function getHighlights($: HLTVPage, team1?: Team, team2?: Team): Highlight[] {
