@@ -329,10 +329,19 @@ function getCommunityOdds($: HLTVPage): ProviderOdds | undefined {
 function countMapWins(maps: MapResult[]): { team1Win: number; team2Win: number } {
   return maps.reduce(
     (acc, map) => {
-      if (map.statsId && map.result) {
-        if (map.result.team1TotalRounds > map.result.team2TotalRounds) {
+      if (map.result) {
+        const team1Rounds = map.result.team1TotalRounds;
+        const team2Rounds = map.result.team2TotalRounds;
+
+        // Verifica se é uma vitória válida baseada nas regras do CS
+        const isTeam1Winner = (team1Rounds >= 13 && team1Rounds >= team2Rounds + 2) || 
+                            (team1Rounds > team2Rounds && team1Rounds >= 16);
+        const isTeam2Winner = (team2Rounds >= 13 && team2Rounds >= team1Rounds + 2) || 
+                            (team2Rounds > team1Rounds && team2Rounds >= 16);
+
+        if (isTeam1Winner) {
           acc.team1Win += 1;
-        } else if (map.result.team2TotalRounds > map.result.team1TotalRounds) {
+        } else if (isTeam2Winner) {
           acc.team2Win += 1;
         }
       }
