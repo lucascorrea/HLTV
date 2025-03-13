@@ -18,6 +18,28 @@ export interface FullTeamPlayer extends Player {
   mapsPlayed: number
 }
 
+export interface TeamMatch {
+  id: number
+  date: number
+  team1: {
+    id: number
+    name: string
+    logo?: string
+  }
+  team2: {
+    id: number
+    name: string
+    logo?: string
+  }
+}
+
+export interface TeamMatchResult extends TeamMatch {
+  result: {
+    team1Score: number
+    team2Score: number
+  }
+}
+
 export interface FullTeam {
   id: number
   name: string
@@ -30,6 +52,8 @@ export interface FullTeam {
   players?: FullTeamPlayer[]
   rankingDevelopment?: number[]
   news?: Article[]
+  upcomingMatches?: TeamMatch[]
+  recentResults?: TeamMatchResult[]
 }
 
 export const getTeam =
@@ -116,6 +140,95 @@ export const getTeam =
         name: el.contents().eq(1).text(),
         link: el.attr('href')
       }))
+      
+    // Extraindo upcoming matches
+    const upcomingMatches = $('#matchesBox table.match-table .team-row')
+      .toArray()
+      .filter(el => el.find('.matchpage-button').exists())
+      .map((matchEl) => {
+        const dateEl = matchEl.find('.date-cell span');
+        const date = dateEl.attr('data-unix') ? Number(dateEl.attr('data-unix')) : 0;
+        
+        const team1El = matchEl.find('.team-flex').first();
+        const team1Id = team1El.find('a').first().attrThen('href', getIdAt(2));
+        const team1Name = team1El.find('.team-name').text();
+        const team1Logo = team1El.find('.team-logo').attr('src');
+        
+        const team2El = matchEl.find('.team-flex').last();
+        const team2Id = team2El.find('a').first().attrThen('href', getIdAt(2));
+        const team2Name = team2El.find('.team-name').text();
+        const team2Logo = team2El.find('.team-logo').attr('src');
+        
+        // Extrair o ID da partida da URL
+        const matchId = matchEl.find('.matchpage-button').attrThen('href', getIdAt(2)) || '0';
+        
+        // Extrair informações do evento da URL da partida
+        const matchUrl = matchEl.find('.matchpage-button').attr('href') || '';
+        const urlParts = matchUrl.split('/');
+        if (urlParts.length >= 3) {
+          const eventSlug = urlParts[urlParts.length - 1].split('-').slice(3).join('-');
+          return {
+            id: Number(matchId),
+            date,
+            team1: { id: Number(team1Id || '0'), name: team1Name, logo: team1Logo },
+            team2: { id: Number(team2Id || '0'), name: team2Name, logo: team2Logo },
+          };
+        }
+        
+        // Fallback se não conseguir extrair da URL
+        return {
+          id: Number(matchId),
+          date,
+          team1: { id: Number(team1Id || '0'), name: team1Name, logo: team1Logo },
+          team2: { id: Number(team2Id || '0'), name: team2Name, logo: team2Logo }
+        };
+      });
+      
+    // Extraindo recent results
+    const recentResults = $('#matchesBox table.match-table .team-row')
+      .toArray()
+      .filter(el => el.find('.stats-button').exists()) // Filtra apenas partidas com resultados
+      .map((matchEl) => {
+        const dateEl = matchEl.find('.date-cell span');
+        const date = dateEl.attr('data-unix') ? Number(dateEl.attr('data-unix')) : 0;
+        
+        const team1El = matchEl.find('.team-flex').first();
+        const team1Id = team1El.find('a').first().attrThen('href', getIdAt(2));
+        const team1Name = team1El.find('.team-name').text();
+        const team1Logo = team1El.find('.team-logo').attr('src');
+        const team1Score = matchEl.find('.score-cell .score').first().numFromText() || 0;
+        
+        const team2El = matchEl.find('.team-flex').last();
+        const team2Id = team2El.find('a').first().attrThen('href', getIdAt(2));
+        const team2Name = team2El.find('.team-name').text();
+        const team2Logo = team2El.find('.team-logo').attr('src');
+        const team2Score = matchEl.find('.score-cell .score').last().numFromText() || 0;
+        
+        // Extrair o ID da partida da URL
+        const matchId = matchEl.find('.stats-button').attrThen('href', getIdAt(2)) || '0';
+        
+        // Extrair informações do evento da URL da partida
+        const matchUrl = matchEl.find('.stats-button').attr('href') || '';
+        
+        return {
+          id: Number(matchId),
+          date,
+          team1: {
+            id: Number(team1Id || '0'),
+            name: team1Name,
+            logo: team1Logo
+          },
+          team2: {
+            id: Number(team2Id || '0'),
+            name: team2Name,
+            logo: team2Logo
+          },
+          result: {
+            team1Score,
+            team2Score
+          }
+        };
+      });
 
     return {
       id,
@@ -125,10 +238,12 @@ export const getTeam =
       twitter,
       instagram,
       country,
-      rank,
+      // rank,
       players,
-      rankingDevelopment,
-      news
+      // rankingDevelopment,
+      // news,
+      upcomingMatches,
+      recentResults
     }
   }
 
