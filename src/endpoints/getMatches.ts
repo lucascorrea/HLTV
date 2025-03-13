@@ -64,7 +64,7 @@ export const getMatches =
           };
         });
 
-      const liveMatches = $('.matches-chronologically.matches-chronologically-hide .live-matches-wrapper .liveMatches .live-match-container')
+      const liveMatches = $('.matches-chronologically .live-matches-wrapper .liveMatches .live-match-container')
         .toArray()
         .map((el) => {
           const id = el.find('.a-reset').attrThen('href', getIdAt(2))!
@@ -109,7 +109,7 @@ export const getMatches =
           return { id, date, stars, title, team1, team2, format, event, live }
         })
 
-      const upcomingMatches = $('.matches-chronologically.matches-chronologically-hide .matches-list .match-time-wrapper')
+      const upcomingMatches = $('.matches-chronologically.matches-chronologically-hide .matches-list .match-zone-wrapper')
         .toArray()
         .map((el) => {
           const id = el.find('.a-reset').attrThen('href', getIdAt(2))!

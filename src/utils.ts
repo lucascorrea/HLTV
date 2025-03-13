@@ -39,7 +39,7 @@ export const fetchPage = async (
     }
 
     // console.log(html)
-
+  //   console.log(url)
   //   fs.writeFile('arquivo.txt', html, 'utf8', (err: NodeJS.ErrnoException | null) => {
   //     if (err) {
   //         console.error("Erro ao salvar o arquivo:", err);
