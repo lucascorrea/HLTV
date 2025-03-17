@@ -40,6 +40,12 @@ export interface TeamMatchResult extends TeamMatch {
   }
 }
 
+// Definir uma interface para o desenvolvimento do ranking
+export interface RankingPoint {
+  rank: number
+  date: string
+}
+
 export interface FullTeam {
   id: number
   name: string
@@ -50,7 +56,7 @@ export interface FullTeam {
   country?: Country
   rank?: number
   players?: FullTeamPlayer[]
-  rankingDevelopment?: number[]
+  rankingDevelopment?: RankingPoint[] // Alterado para incluir data
   news?: Article[]
   upcomingMatches?: TeamMatch[]
   recentResults?: TeamMatchResult[]
@@ -123,10 +129,19 @@ export const getTeam =
 
     try {
       const rankings = JSON.parse($('.graph').attr('data-fusionchart-config')!)
-      rankingDevelopment = rankings.dataSource.dataset[0].data.map((x: any) =>
-        parseNumber(x.value)
-      )
-    } catch {
+      
+      rankingDevelopment = rankings.dataSource.dataset[0].data.map((x: any) => {
+        // Extrair a data do tooltext usando regex
+        const dateMatch = x.tooltext.match(/<div class="subtitle">([^<]+)<\/div>/);
+        const dateStr = dateMatch ? dateMatch[1] : '';
+        
+        return {
+          rank: parseNumber(x.value),
+          date: dateStr
+        };
+      })
+    } catch (error) {
+      console.error('Error parsing ranking data:', error);
       rankingDevelopment = []
     }
 
@@ -238,10 +253,10 @@ export const getTeam =
       twitter,
       instagram,
       country,
-      // rank,
+      rank,
       players,
-      // rankingDevelopment,
-      // news,
+      rankingDevelopment,
+      news,
       upcomingMatches,
       recentResults
     }
