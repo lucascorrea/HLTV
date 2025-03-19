@@ -165,17 +165,20 @@ export const getTeam =
         const date = dateEl.attr('data-unix') ? Number(dateEl.attr('data-unix')) : 0;
         
         const team1El = matchEl.find('.team-flex').first();
-        const team1Id = team1El.find('a').first().attrThen('href', getIdAt(2));
+        const team1Link = team1El.find('a').first().attr('href');
+        const team1Id = team1Link ? getIdAt(2)(team1Link) : '0';
         const team1Name = team1El.find('.team-name').text();
         const team1Logo = team1El.find('.team-logo').attr('src');
         
         const team2El = matchEl.find('.team-flex').last();
-        const team2Id = team2El.find('a').first().attrThen('href', getIdAt(2));
+        const team2Link = team2El.find('a').first().attr('href');
+        const team2Id = team2Link ? getIdAt(2)(team2Link) : '0';
         const team2Name = team2El.find('.team-name').text();
         const team2Logo = team2El.find('.team-logo').attr('src');
         
         // Extrair o ID da partida da URL
-        const matchId = matchEl.find('.matchpage-button').attrThen('href', getIdAt(2)) || '0';
+        const matchLink = matchEl.find('.matchpage-button').attr('href');
+        const matchId = matchLink ? getIdAt(2)(matchLink) : '0';
         
         // Extrair informações do evento da URL da partida
         const matchUrl = matchEl.find('.matchpage-button').attr('href') || '';
@@ -208,19 +211,22 @@ export const getTeam =
         const date = dateEl.attr('data-unix') ? Number(dateEl.attr('data-unix')) : 0;
         
         const team1El = matchEl.find('.team-flex').first();
-        const team1Id = team1El.find('a').first().attrThen('href', getIdAt(2));
+        const team1Link = team1El.find('a').first().attr('href');
+        const team1Id = team1Link ? getIdAt(2)(team1Link) : '0';
         const team1Name = team1El.find('.team-name').text();
         const team1Logo = team1El.find('.team-logo').attr('src');
         const team1Score = matchEl.find('.score-cell .score').first().numFromText() || 0;
         
         const team2El = matchEl.find('.team-flex').last();
-        const team2Id = team2El.find('a').first().attrThen('href', getIdAt(2));
+        const team2Link = team2El.find('a').first().attr('href');
+        const team2Id = team2Link ? getIdAt(2)(team2Link) : '0';
         const team2Name = team2El.find('.team-name').text();
         const team2Logo = team2El.find('.team-logo').attr('src');
         const team2Score = matchEl.find('.score-cell .score').last().numFromText() || 0;
         
         // Extrair o ID da partida da URL
-        const matchId = matchEl.find('.stats-button').attrThen('href', getIdAt(2)) || '0';
+        const matchLink = matchEl.find('.stats-button').attr('href');
+        const matchId = matchLink ? getIdAt(2)(matchLink) : '0';
         
         // Extrair informações do evento da URL da partida
         const matchUrl = matchEl.find('.stats-button').attr('href') || '';
