@@ -73,12 +73,12 @@ export const getTeam =
     )
 
     const name = $('.profile-team-name').text()
-    const logoSrc = $('.teamlogo').attr('src') || ''; // Default to an empty string if undefined
+    const logoSrc = $('.teamlogo.night-only').attr('src') || $('.teamlogo:not(.day-only)').attr('src'); // Default to an empty string if undefined
     const logo = !logoSrc?.includes('placeholder.svg') ? logoSrc : '';
     const facebook = $('.facebook').parent().attr('href')
     const twitter = $('.twitter').parent().attr('href')
     const instagram = $('.instagram').parent().attr('href')
-    const rankText = $('.profile-team-stat .right').first().text();
+    const rankText = $('.profile-team-stat .right').eq(1).text() || $('.profile-team-stat .right').first().text();
     const rank = rankText ? parseNumber(rankText.replace('#', '')) : undefined;
 
     const players = $('.players-table tbody tr')
@@ -168,13 +168,15 @@ export const getTeam =
         const team1Link = team1El.find('a').first().attr('href');
         const team1Id = team1Link ? getIdAt(2)(team1Link) : '0';
         const team1Name = team1El.find('.team-name').text();
-        const team1Logo = team1El.find('.team-logo').attr('src');
+        const team1Logo = team1El.find('.team-logo.night-only').attr('src') || 
+                         team1El.find('.team-logo:not(.day-only)').attr('src');
         
         const team2El = matchEl.find('.team-flex').last();
         const team2Link = team2El.find('a').first().attr('href');
         const team2Id = team2Link ? getIdAt(2)(team2Link) : '0';
         const team2Name = team2El.find('.team-name').text();
-        const team2Logo = team2El.find('.team-logo').attr('src');
+        const team2Logo = team2El.find('.team-logo.night-only').attr('src') || 
+                         team2El.find('.team-logo:not(.day-only)').attr('src');
         
         // Extrair o ID da partida da URL
         const matchLink = matchEl.find('.matchpage-button').attr('href');
@@ -214,14 +216,17 @@ export const getTeam =
         const team1Link = team1El.find('a').first().attr('href');
         const team1Id = team1Link ? getIdAt(2)(team1Link) : '0';
         const team1Name = team1El.find('.team-name').text();
-        const team1Logo = team1El.find('.team-logo').attr('src');
+
+        const team1Logo = team1El.find('.team-logo.night-only').attr('src') || 
+                         team1El.find('.team-logo:not(.day-only)').attr('src');
         const team1Score = matchEl.find('.score-cell .score').first().numFromText() || 0;
         
         const team2El = matchEl.find('.team-flex').last();
         const team2Link = team2El.find('a').first().attr('href');
         const team2Id = team2Link ? getIdAt(2)(team2Link) : '0';
         const team2Name = team2El.find('.team-name').text();
-        const team2Logo = team2El.find('.team-logo').attr('src');
+        const team2Logo = team2El.find('.team-logo.night-only').attr('src') || 
+                         team2El.find('.team-logo:not(.day-only)').attr('src');
         const team2Score = matchEl.find('.score-cell .score').last().numFromText() || 0;
         
         // Extrair o ID da partida da URL
@@ -249,7 +254,8 @@ export const getTeam =
             team2Score
           }
         };
-      });
+      })
+      .sort((a, b) => b.date - a.date) // Ordem decrescente (mais recente -> mais antigo)
 
     return {
       id,

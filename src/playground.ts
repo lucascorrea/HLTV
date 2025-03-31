@@ -18,7 +18,7 @@ const log = (promise: Promise<any>) =>
 // log(HLTV.getPlayerStats({ id: 11893 }))
 // log(HLTV.getRecentThreads())
 // log(HLTV.getStreams())
-log(HLTV.getTeam({ id: 11419 }))
+log(HLTV.getTeam({ id: 9565 }))
 // log(HLTV.getTeamByName({ name: "JiJieHao" }))
 // log(HLTV.getTeamStats({ id: 13025 }))
 // log(HLTV.getPastEvents({ startDate: '2019-3-1', endDate: '2019-3-29' }))
