@@ -82,6 +82,8 @@ export const fromMapName = (name: string): GameMap => {
       return GameMap.Ancient
     case 'Anubis':
       return GameMap.Anubis
+    case 'Season':
+      return GameMap.Season
     case 'Default':
       return GameMap.Default
     default:
