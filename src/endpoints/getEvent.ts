@@ -69,7 +69,8 @@ export const getEvent =
     )
 
     const name = $('.event-hub-title').text()
-    const logo = $('.sidebar-first-level').find('.event-logo').attr('src')
+    const logo = $('.sidebar-first-level').find('.event-logo').attr('src') || 
+                 $('.sidebar-first-level').find('.event-logo').attr('data-cookieblock-src')
     const prizePool = $('td.prizepool').text()
 
     const dateStart = $('td.eventdate span[data-unix]')

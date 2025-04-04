@@ -113,12 +113,14 @@ export const getResults =
 
             const team1 = {
               name: el.find('div.team').first().text(),
-              logo: el.find('img.team-logo').first().attr('src')
+              logo: el.find('img.team-logo').first().attr('src') || 
+                    el.find('img.team-logo').first().attr('data-cookieblock-src') || ''
             }
 
             const team2 = {
               name: el.find('div.team').last().text(),
-              logo: el.find('img.team-logo').last().attr('src')
+              logo: el.find('img.team-logo').last().attr('src') || 
+                    el.find('img.team-logo').last().attr('data-cookieblock-src') || ''
             }
 
             const [team1Result, team2Result] = el

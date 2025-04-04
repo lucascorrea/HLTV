@@ -121,7 +121,8 @@ export const getPlayerStats =
     const ign = $('.context-item-name').text()
 
     const imageUrl =
-      $('.summaryBodyshot').attr('src') || $('.summarySquare').attr('src')
+      $('.summaryBodyshot').attr('src') || $('.summaryBodyshot').attr('data-cookieblock-src') || 
+      $('.summarySquare').attr('src') || $('.summarySquare').attr('data-cookieblock-src')
     const image =
       imageUrl?.includes('bodyshot/unknown.png') ||
       imageUrl?.includes('static/player/player_silhouette.png')

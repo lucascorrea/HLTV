@@ -59,7 +59,8 @@ export const getPlayer =
     const ign = $('.playerNickname').text()
 
     const imageUrl =
-      $('.profile-img').attr('src') || $('.bodyshot-img').attr('src')
+      $('.profile-img').attr('src') || $('.profile-img').attr('data-cookieblock-src') || 
+      $('.bodyshot-img').attr('src') || $('.bodyshot-img').attr('data-cookieblock-src')
 
     const image =
       imageUrl?.includes('bodyshot/unknown.png') ||

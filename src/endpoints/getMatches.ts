@@ -60,7 +60,8 @@ export const getMatches =
           return {
             id: el.attr('data-event-id') ? Number(el.attr('data-event-id')) : undefined,
             name: el.attr('data-event-headline')?.trim() || '',
-            logo: el.find('.match-event-logo').attr('src') || '',
+            logo: el.find('.match-event-logo').attr('src') || 
+                  el.find('.match-event-logo').attr('data-cookieblock-src') || '',
           };
         });
 
@@ -80,9 +81,11 @@ export const getMatches =
             var logo1 = ''
             var logo2 = ''
 
-            const logoSrc1 = el.find('.match-team-logo:not(.day-only)').first().attr('src') || '';
+            const logoSrc1 = el.find('.match-team-logo:not(.day-only)').first().attr('src') || 
+                            el.find('.match-team-logo:not(.day-only)').first().attr('data-cookieblock-src') || '';
             logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
-            const logoSrc2 = el.find('.match-team-logo:not(.day-only)').eq(1).attr('src') || '';
+            const logoSrc2 = el.find('.match-team-logo:not(.day-only)').eq(1).attr('src') || 
+                            el.find('.match-team-logo:not(.day-only)').eq(1).attr('data-cookieblock-src') || '';
             logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
 
             team1 = {
@@ -126,18 +129,22 @@ export const getMatches =
             var logo2 = ''
           
             if (el.find('.match-team.team1 .match-team-logo').length == 2) {
-              const logoSrc1 = el.find('.match-team.team1 .match-team-logo').eq(1).attr('src') || '';
+              const logoSrc1 = el.find('.match-team.team1 .match-team-logo').eq(1).attr('src') || 
+                              el.find('.match-team.team1 .match-team-logo').eq(1).attr('data-cookieblock-src') || '';
               logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
             } else {
-              const logoSrc1 = el.find('.match-team.team1 .match-team-logo').first().attr('src') || '';
+              const logoSrc1 = el.find('.match-team.team1 .match-team-logo').first().attr('src') || 
+                              el.find('.match-team.team1 .match-team-logo').first().attr('data-cookieblock-src') || '';
               logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
             }
 
             if (el.find('.match-team.team2 .match-team-logo').length == 2) {
-              const logoSrc2 = el.find('.match-team.team2 .match-team-logo').eq(1).attr('src') || '';
+              const logoSrc2 = el.find('.match-team.team2 .match-team-logo').eq(1).attr('src') || 
+                              el.find('.match-team.team2 .match-team-logo').eq(1).attr('data-cookieblock-src') || '';
               logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
             } else {
-              const logoSrc2 = el.find('.match-team.team2 .match-team-logo').first().attr('src') || '';
+              const logoSrc2 = el.find('.match-team.team2 .match-team-logo').first().attr('src') || 
+                              el.find('.match-team.team2 .match-team-logo').first().attr('data-cookieblock-src') || '';
               logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
             }
             

@@ -212,7 +212,10 @@ function getTeam($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined {
         id: $(`.team${n}-gradient a`).attrThen('href', (href) =>
           href ? getIdAt(2, href) : undefined
         ),
-        logo: $(`.team${n}-gradient img.night-only`).attr('src') || $(`.team${n}-gradient img:not(.day-only)`).attr('src'),
+        logo: $(`.team${n}-gradient img.night-only`).attr('src') || 
+               $(`.team${n}-gradient img.night-only`).attr('data-cookieblock-src') || 
+               $(`.team${n}-gradient img:not(.day-only)`).attr('src') || 
+               $(`.team${n}-gradient img:not(.day-only)`).attr('data-cookieblock-src'),
         rank: $('.teamRanking a')
           .eq(n - 1)
           .contents()
@@ -407,15 +410,44 @@ function getPlayers($: HLTVPage) {
     const trs = teamDiv.find('tr');
     const imagesRow = trs.first();
     const dataRow = trs.last();
-    
+
     return dataRow
       .find('.flagAlign')
       .toArray()
       .map((playerEl, i) => {
+        // Tentar obter a foto do jogador de várias maneiras
+        let photoUrl = '';
+        
+        // Método 1: Verificar a estrutura atual
         const photoEl = imagesRow.children().eq(i).find('img');
+        if (photoEl.length) {
+          photoUrl = photoEl.attr('src') || photoEl.attr('data-cookieblock-src') || '';
+        }
+        
+        // Método 2: Verificar se existe um elemento player-compare com o mesmo ID
+        if (!photoUrl) {
+          const playerId = playerEl.data('player-id');
+          if (playerId) {
+            const playerCompareEl = $(`.player-compare[data-player-id="${playerId}"] img`);
+            if (playerCompareEl.length) {
+              photoUrl = playerCompareEl.attr('src') || playerCompareEl.attr('data-cookieblock-src') || '';
+            }
+          }
+        }
+        
+        // Método 3: Verificar se existe um elemento com a classe player-photo
+        if (!photoUrl) {
+          const playerName = playerEl.find('.text-ellipsis').text();
+          if (playerName) {
+            const playerPhotoEl = $(`img.player-photo[title*="${playerName}"]`);
+            if (playerPhotoEl.length) {
+              photoUrl = playerPhotoEl.attr('src') || playerPhotoEl.attr('data-cookieblock-src') || '';
+            }
+          }
+        }
         
         return {
-          photo: photoEl.attr('src') || '',
+          photo: photoUrl,
           name: playerEl.find('.text-ellipsis').text(),
           id: playerEl.data('player-id')
         }
@@ -493,14 +525,16 @@ function getHighlightedPlayers($: HLTVPage) {
   return highlightedPlayer1.exists() && highlightedPlayer2.exists()
     ? {
         team1: {
-          photo: '',
+          photo: $('.lineups-compare-left .player-photo').attr('src') || 
+                 $('.lineups-compare-left .player-photo').attr('data-cookieblock-src') || '',
           name: $('.lineups-compare-left .lineups-compare-playername').text(),
           id: $('.lineups-compare-left .lineups-compare-player-links a')
             .first()
             .attrThen('href', getIdAt(2))
         },
         team2: {
-          photo: '',
+          photo: $('.lineups-compare-right .player-photo').attr('src') || 
+                 $('.lineups-compare-right .player-photo').attr('data-cookieblock-src') || '',
           name: $('.lineups-compare-right .lineups-compare-playername').text(),
           id: $('.lineups-compare-right .lineups-compare-player-links a')
             .first()
