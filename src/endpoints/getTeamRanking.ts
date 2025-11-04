@@ -69,7 +69,7 @@ export const getTeamRanking =
         const team = {
           name: el.find('.name').text(),
           id: el.find('.moreLink').attrThen('href', getIdAt(2)),
-          logo: el.find('.team-logo img').first().attr('src')
+          logo: el.find('.team-logo img.night-only').first().attr('src') || el.find('.team-logo img:not(.day-only)').first().attr('src')
         }
 
         const changeText = el.find('.change').text()
