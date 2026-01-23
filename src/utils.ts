@@ -1,71 +1,43 @@
 import * as cheerio from 'cheerio'
 import { randomUUID } from 'crypto'
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-const fs = require('fs');
+import axios from 'axios'
 
-puppeteer.use(StealthPlugin());
+const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL || 'http://localhost:8191/v1'
 
 export const fetchPage = async (
   url: string,
   loadPage: (url: string) => Promise<string>
 ): Promise<cheerio.Root> => {
-  const browser = await puppeteer.launch({ headless: true });
-  const page = await browser.newPage();
-
   try {
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+    const response = await axios.post(FLARESOLVERR_URL, {
+      cmd: 'request.get',
+      url: url,
+      maxTimeout: 60000
+    })
 
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Upgrade-Insecure-Requests': '1'
-    });
+    if (response.data.status !== 'ok') {
+      throw new Error(`FlareSolverr erro: ${response.data.message || 'Erro desconhecido'}`)
+    }
 
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    const html = await page.content();
+    const html = response.data.solution.response
 
     const errorPatterns = [
       'error code:',
       'Sorry, you have been blocked',
       'Checking your browser before accessing',
-      'Enable JavaScript and cookies to continue'
-    ];
-    const foundError = errorPatterns.find(pattern => html.includes(pattern));
+      'Enable JavaScript and cookies to continue',
+      'verify you are human'
+    ]
+    const foundError = errorPatterns.find(pattern => html.includes(pattern))
 
     if (foundError) {
-      throw new Error(`Access denied 1 | www.hltv.org used Cloudflare to restrict access.`);
+      throw new Error(`Acesso negado | www.hltv.org bloqueado pelo Cloudflare`)
     }
 
-    // console.log(html)
-  //   console.log(url)
-  //   fs.writeFile('arquivo.txt', html, 'utf8', (err: NodeJS.ErrnoException | null) => {
-  //     if (err) {
-  //         console.error("Erro ao salvar o arquivo:", err);
-  //         return;
-  //     }
-  //     console.log("Arquivo salvo com sucesso!");
-  // });
-
-    return cheerio.load(html);
+    return cheerio.load(html)
   } catch (error) {
-    console.error(`Erro ao buscar página ${url}:`, error);
-    throw error;
-  } finally {
-    try {
-      if (!page.isClosed()) {
-        await page.close();
-      }
-    } catch (pageError) {
-      console.error("Erro ao fechar a página:", pageError);
-    }
-
-    try {
-      await browser.close();
-    } catch (browserError) {
-      console.error("Erro ao fechar o navegador:", browserError);
-    }
+    console.error(`Erro ao buscar página ${url}:`, error)
+    throw error
   }
 };
 
