@@ -133,23 +133,29 @@ export const getTeam =
     let rankingDevelopment
 
     try {
-      const rankings = JSON.parse($('.graph').attr('data-fusionchart-config'));
-      rankingDevelopment = rankings.dataSource.dataset[0].data
-        .map((x: any) => {
-          // Extrair a data do tooltext usando regex
-          const dateMatch = x.tooltext && x.tooltext.match ? x.tooltext.match(/<div class="subtitle">([^<]+)<\/div>/) : null;
-          const dateStr = dateMatch ? dateMatch[1] : '';
-          
-          // Verificar se x.value existe antes de criar o objeto
-          if (x.value) {
-            return {
-              rank: parseNumber(x.value),
-              date: dateStr
-            };
-          }
-          return null; // Retorna null para objetos sem rank
-        })
-        .filter((item: any) => item !== null); // Remove os objetos null do array
+      const rankingConfig = $('.graph').attr('data-fusionchart-config');
+      
+      if (!rankingConfig) {
+        rankingDevelopment = [];
+      } else {
+        const rankings = JSON.parse(rankingConfig);
+        rankingDevelopment = rankings.dataSource.dataset[0].data
+          .map((x: any) => {
+            // Extrair a data do tooltext usando regex
+            const dateMatch = x.tooltext && x.tooltext.match ? x.tooltext.match(/<div class="subtitle">([^<]+)<\/div>/) : null;
+            const dateStr = dateMatch ? dateMatch[1] : '';
+            
+            // Verificar se x.value existe antes de criar o objeto
+            if (x.value) {
+              return {
+                rank: parseNumber(x.value),
+                date: dateStr
+              };
+            }
+            return null; // Retorna null para objetos sem rank
+          })
+          .filter((item: any) => item !== null); // Remove os objetos null do array
+      }
     } catch (error) {
       console.error('Error parsing ranking data:', error);
       rankingDevelopment = [];
