@@ -1,25 +1,108 @@
 import * as cheerio from 'cheerio'
 import { randomUUID } from 'crypto'
-import axios from 'axios'
+import { chromium } from 'playwright-extra'
+import stealth from 'puppeteer-extra-plugin-stealth'
 
-const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL || 'http://localhost:8191/v1'
+// Configure playwright with stealth plugin
+chromium.use(stealth())
 
+let browser: any = null
+let browserInitPromise: Promise<any> | null = null
+
+/**
+ * Semáforo para controlar concorrência
+ */
+class Semaphore {
+  private max: number
+  private current: number
+  private queue: Array<() => void>
+
+  constructor(max: number) {
+    this.max = max
+    this.current = 0
+    this.queue = []
+  }
+
+  async acquire(): Promise<void> {
+    if (this.current < this.max) {
+      this.current++
+      return Promise.resolve()
+    }
+
+    return new Promise(resolve => {
+      this.queue.push(resolve)
+    })
+  }
+
+  release(): void {
+    this.current--
+    if (this.queue.length > 0) {
+      this.current++
+      const resolve = this.queue.shift()!
+      resolve()
+    }
+  }
+}
+
+const playwrightSemaphore = new Semaphore(8)
+
+async function getBrowser() {
+  if (browser && browser.isConnected()) {
+    return browser
+  }
+
+  if (browserInitPromise) {
+    return browserInitPromise
+  }
+
+  browserInitPromise = chromium.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--window-size=1280x720',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--no-first-run',
+      '--disable-blink-features=AutomationControlled',
+    ],
+    timeout: 30000
+  })
+
+  browser = await browserInitPromise
+  browserInitPromise = null
+
+  browser.on('disconnected', () => {
+    browser = null
+  })
+
+  return browser
+}
+
+// Implementação com Playwright
 export const fetchPage = async (
   url: string,
   loadPage: (url: string) => Promise<string>
 ): Promise<cheerio.Root> => {
+  let semaphoreAcquired = false
+  let page: any = null
+  
   try {
-    const response = await axios.post(FLARESOLVERR_URL, {
-      cmd: 'request.get',
-      url: url,
-      maxTimeout: 60000
-    })
-
-    if (response.data.status !== 'ok') {
-      throw new Error(`FlareSolverr erro: ${response.data.message || 'Erro desconhecido'}`)
-    }
-
-    const html = response.data.solution.response
+    await playwrightSemaphore.acquire()
+    semaphoreAcquired = true
+    
+    const browserInstance = await getBrowser()
+    page = await browserInstance.newPage()
+    
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    
+    const html = await page.content()
+    
+    await page.close()
+    page = null
 
     const errorPatterns = [
       'error code:',
@@ -36,8 +119,16 @@ export const fetchPage = async (
 
     return cheerio.load(html)
   } catch (error) {
-    console.error(`Erro ao buscar página ${url}:`, error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error(`Erro ao buscar página ${url}: ${errorMessage}`)
     throw error
+  } finally {
+    if (page) {
+      await page.close().catch(() => {})
+    }
+    if (semaphoreAcquired) {
+      playwrightSemaphore.release()
+    }
   }
 };
 

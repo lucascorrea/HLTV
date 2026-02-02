@@ -1,8 +1,39 @@
 import { Agent as HttpsAgent } from 'https'
 import { Agent as HttpAgent } from 'http'
-import axios from 'axios'
+import { chromium } from 'playwright-extra'
+import stealth from 'puppeteer-extra-plugin-stealth'
 
-const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL || 'http://localhost:8191/v1'
+// Configure playwright with stealth plugin
+chromium.use(stealth())
+
+let browser: any = null
+
+async function getBrowser() {
+  if (browser && browser.isConnected()) {
+    return browser
+  }
+
+  browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--window-size=1280x720',
+      '--disable-extensions',
+      '--no-first-run',
+      '--disable-blink-features=AutomationControlled',
+    ],
+    timeout: 30000
+  })
+
+  browser.on('disconnected', () => {
+    browser = null
+  })
+
+  return browser
+}
 
 export interface HLTVConfig {
   loadPage: (url: string) => Promise<string>
@@ -11,21 +42,28 @@ export interface HLTVConfig {
 
 export const defaultLoadPage =
   (httpAgent: HttpsAgent | HttpAgent | undefined) => async (url: string) => {
+    let page: any = null
+    
     try {
-      const response = await axios.post(FLARESOLVERR_URL, {
-        cmd: 'request.get',
-        url: url,
-        maxTimeout: 60000
-      })
-
-      if (response.data.status !== 'ok') {
-        throw new Error(`FlareSolverr erro: ${response.data.message || 'Erro desconhecido'}`)
-      }
-
-      return response.data.solution.response
+      const browserInstance = await getBrowser()
+      page = await browserInstance.newPage()
+      
+      await page.setViewportSize({ width: 1280, height: 720 })
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+      
+      const html = await page.content()
+      await page.close()
+      page = null
+      
+      return html
     } catch (error) {
-      console.error(`Erro ao buscar página ${url}:`, error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`Erro ao buscar página ${url}: ${errorMessage}`)
       throw error
+    } finally {
+      if (page) {
+        await page.close().catch(() => {})
+      }
     }
   };
 

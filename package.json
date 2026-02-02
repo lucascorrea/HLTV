@@ -66,6 +66,8 @@
     "axios": "^1.7.9",
     "cheerio": "1.0.0-rc.12",
     "got-scraping": "^3.2.15",
+    "playwright": "^1.58.1",
+    "playwright-extra": "^4.3.6",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "socket.io-client": "2.4.0"
