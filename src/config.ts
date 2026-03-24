@@ -1,5 +1,6 @@
 import { Agent as HttpsAgent } from 'https'
 import { Agent as HttpAgent } from 'http'
+import axios from 'axios'
 import { chromium } from 'playwright-extra'
 import stealth from 'puppeteer-extra-plugin-stealth'
 
@@ -35,9 +36,51 @@ async function getBrowser() {
   return browser
 }
 
+export interface FlareSolverrLoadPageOptions {
+  /** Ex.: http://127.0.0.1:8191 — default: FLARESOLVERR_URL ou 127.0.0.1:8191 */
+  flareSolverrUrl?: string
+  maxTimeoutMs?: number
+}
+
+/** HTML via FlareSolverr (`POST .../v1`, cmd request.get). Use em rotas /stats/ bloqueadas no Playwright. */
+export const defaultLoadPageFlareSolverr = (
+  options: FlareSolverrLoadPageOptions = {}
+): ((url: string) => Promise<string>) => {
+  const base = (
+    options.flareSolverrUrl ||
+    process.env.FLARESOLVERR_URL ||
+    'http://127.0.0.1:8191'
+  ).replace(/\/$/, '')
+  const maxTimeout =
+    options.maxTimeoutMs ??
+    Number(process.env.FLARESOLVERR_TIMEOUT_MS || 120000)
+
+  return async (url: string) => {
+    const { data } = await axios.post(
+      `${base}/v1`,
+      { cmd: 'request.get', url, maxTimeout },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: maxTimeout + 15000,
+        validateStatus: () => true,
+      }
+    )
+
+    if (data?.status !== 'ok' || typeof data?.solution?.response !== 'string') {
+      const msg =
+        data?.message || data?.status || JSON.stringify(data).slice(0, 200)
+      throw new Error(`FlareSolverr: ${msg}`)
+    }
+
+    return data.solution.response as string
+  }
+}
+
 export interface HLTVConfig {
   loadPage: (url: string) => Promise<string>
   httpAgent: HttpsAgent | HttpAgent
+  /** Opcional: usado em getTeamStats na página principal de stats (Cloudflare mais rígido em /stats/). */
+  loadPageFlareSolverr?: (url: string) => Promise<string>
 }
 
 export const defaultLoadPage =

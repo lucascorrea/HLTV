@@ -7,7 +7,7 @@ import { MatchType } from '../shared/MatchType'
 import { Player } from '../shared/Player'
 import { Event } from '../shared/Event'
 import { RankingFilter } from '../shared/RankingFilter'
-import { fetchPage, generateRandomSuffix, getIdAt } from '../utils'
+import { fetchPageFlareSolverr, generateRandomSuffix, getIdAt } from '../utils'
 import { MatchStatsPreview } from './getMatchesStats'
 
 export interface TeamMapStats {
@@ -72,10 +72,12 @@ export const getTeamStats =
       ...(options.bestOfX ? { bestOfX: options.bestOfX } : {})
     })
 
+    const loadStats = config.loadPageFlareSolverr ?? config.loadPage
+
     let $ = HLTVScraper(
-      await fetchPage(
+      await fetchPageFlareSolverr(
         `https://www.hltv.org/stats/teams/${options.id}/-?${query}`,
-        config.loadPage
+        loadStats
       )
     )
 
@@ -93,9 +95,9 @@ export const getTeamStats =
 
     if (options.currentRosterOnly) {
       $ = HLTVScraper(
-        await fetchPage(
+        await fetchPageFlareSolverr(
           `https://www.hltv.org/stats/lineup?${currentRosterQuery}`,
-          config.loadPage
+          loadStats
         )
       )
     }
@@ -111,29 +113,29 @@ export const getTeamStats =
     const standins = getPlayersByContainer(getContainerByText($, 'Standins'))
 
     const [m$, e$, mp$] = await Promise.all([
-      fetchPage(
+      fetchPageFlareSolverr(
         options.currentRosterOnly
           ? `https://www.hltv.org/stats/lineup/matches?${currentRosterQuery}&${query}`
           : `https://www.hltv.org/stats/teams/matches/${
               options.id
             }/${generateRandomSuffix()}?${query}`,
-        config.loadPage
+        loadStats
       ).then(HLTVScraper),
-      fetchPage(
+      fetchPageFlareSolverr(
         options.currentRosterOnly
           ? `https://www.hltv.org/stats/lineup/events?${currentRosterQuery}&${query}`
           : `https://www.hltv.org/stats/teams/events/${
               options.id
             }/${generateRandomSuffix()}?${query}`,
-        config.loadPage
+        loadStats
       ).then(HLTVScraper),
-      fetchPage(
+      fetchPageFlareSolverr(
         options.currentRosterOnly
           ? `https://www.hltv.org/stats/lineup/maps?${currentRosterQuery}&${query}`
           : `https://www.hltv.org/stats/teams/maps/${
               options.id
             }/${generateRandomSuffix()}?${query}`,
-        config.loadPage
+        loadStats
       ).then(HLTVScraper)
     ])
 

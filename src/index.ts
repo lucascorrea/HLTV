@@ -1,4 +1,9 @@
-import { defaultConfig, defaultLoadPage, HLTVConfig } from './config'
+import {
+  defaultConfig,
+  defaultLoadPage,
+  defaultLoadPageFlareSolverr,
+  HLTVConfig,
+} from './config'
 import { getMatch } from './endpoints/getMatch'
 import { connectToScorebot } from './endpoints/connectToScorebot'
 import { getMatches } from './endpoints/getMatches'
@@ -34,6 +39,13 @@ export class Hltv {
 
     if (!config.loadPage) {
       config.loadPage = defaultConfig.loadPage
+    }
+
+    // Igual ao teste cslivestats: default http://127.0.0.1:8191 sem precisar de FLARESOLVERR_URL
+    if (config.loadPageFlareSolverr === undefined) {
+      config.loadPageFlareSolverr = defaultLoadPageFlareSolverr({
+        flareSolverrUrl: process.env.FLARESOLVERR_URL,
+      })
     }
   }
 
@@ -165,3 +177,8 @@ export type { Event } from './shared/Event'
 export type { Player } from './shared/Player'
 export type { Team } from './shared/Team'
 export type { EventType } from './shared/EventType'
+
+export {
+  defaultLoadPageFlareSolverr,
+  type FlareSolverrLoadPageOptions,
+} from './config'

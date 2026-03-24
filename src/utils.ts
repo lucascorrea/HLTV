@@ -81,6 +81,58 @@ async function getBrowser() {
   return browser
 }
 
+/** Páginas /stats/ reais da HLTV passam de centenas de kB; intersticial do CF costuma ser pequeno. */
+const MIN_HTML_LIKELY_REAL_PAGE = 200_000
+
+/** Mesma validação de HTML que `fetchPage` (Playwright), para HTML vindo do FlareSolverr. */
+function assertHtmlNotBlocked(html: string, url: string): void {
+  if (html.length >= MIN_HTML_LIKELY_REAL_PAGE) {
+    return
+  }
+
+  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i)
+  const title = (titleMatch?.[1] || '').trim().toLowerCase()
+  if (title.includes('just a moment') || title.includes('attention required')) {
+    throw new Error(`Acesso negado | www.hltv.org bloqueado pelo Cloudflare (${url})`)
+  }
+
+  const errorPatterns = [
+    'error code:',
+    'Sorry, you have been blocked',
+    'Checking your browser before accessing',
+    'Enable JavaScript and cookies to continue',
+    'verify you are human',
+    'Performing security verification',
+  ]
+  const found = errorPatterns.find((p) => html.includes(p))
+  if (found) {
+    throw new Error(`Acesso negado | www.hltv.org bloqueado pelo Cloudflare (${url})`)
+  }
+
+  if (html.includes('Just a moment')) {
+    throw new Error(`Acesso negado | www.hltv.org bloqueado pelo Cloudflare (${url})`)
+  }
+}
+
+/**
+ * Carrega HTML via `loadPageFlareSolverr` (ex.: FlareSolverr) e devolve Cheerio.
+ * Em getTeamStats use `config.loadPageFlareSolverr ?? config.loadPage` se quiser fallback.
+ */
+export const fetchPageFlareSolverr = async (
+  url: string,
+  loadPageFlareSolverr: (url: string) => Promise<string>
+): Promise<cheerio.Root> => {
+  try {
+    const html = await loadPageFlareSolverr(url)
+    assertHtmlNotBlocked(html, url)
+    return cheerio.load(html)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error(`Erro ao buscar página (FlareSolverr) ${url}: ${errorMessage}`)
+    throw error
+  }
+}
+
 // Implementação com Playwright
 export const fetchPage = async (
   url: string,
@@ -104,18 +156,7 @@ export const fetchPage = async (
     await page.close()
     page = null
 
-    const errorPatterns = [
-      'error code:',
-      'Sorry, you have been blocked',
-      'Checking your browser before accessing',
-      'Enable JavaScript and cookies to continue',
-      'verify you are human'
-    ]
-    const foundError = errorPatterns.find(pattern => html.includes(pattern))
-
-    if (foundError) {
-      throw new Error(`Acesso negado | www.hltv.org bloqueado pelo Cloudflare`)
-    }
+    assertHtmlNotBlocked(html, url)
 
     return cheerio.load(html)
   } catch (error) {
