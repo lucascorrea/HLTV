@@ -66,10 +66,23 @@ export const getTeamRanking =
         )
         const place = Number(el.find('.position').text().substring(1))
 
+        const logoSrcRaw =
+          el.find('.team-logo img:not(.day-only)').first().attr('src') ||
+          el.find('.team-logo img:not(.day-only)').first().attr('data-cookieblock-src') ||
+          el.find('.team-logo img.day-only').first().attr('src') ||
+          el.find('.team-logo img.day-only').first().attr('data-cookieblock-src') ||
+          el.find('.team-logo img').first().attr('src') ||
+          el.find('.team-logo img').first().attr('data-cookieblock-src') ||
+          ''
+        const logo =
+          logoSrcRaw && !logoSrcRaw.includes('placeholder.svg')
+            ? logoSrcRaw
+            : ''
+
         const team = {
           name: el.find('.name').text(),
           id: el.find('.moreLink').attrThen('href', getIdAt(2)),
-          logo: el.find('.team-logo img.night-only').first().attr('src') || el.find('.team-logo img:not(.day-only)').first().attr('src')
+          logo
         }
 
         const changeText = el.find('.change').text()
