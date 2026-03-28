@@ -8,6 +8,7 @@
     "clean": "rm -rf lib",
     "build": "npm run clean && npx tsc -p tsconfig.release.json",
     "start": "ts-node src/playground",
+    "download-ranking-logos": "ts-node src/downloadRankingLogos.ts",
     "test": "jest --runInBand",
     "test:approve": "jest --runInBand --updateSnapshot",
     "pretty": "prettier --write \"**/*.ts\""
@@ -70,6 +71,7 @@
     "playwright-extra": "^4.3.6",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "sharp": "^0.33.5",
     "socket.io-client": "2.4.0"
   }
 }
