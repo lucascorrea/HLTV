@@ -249,24 +249,126 @@ function getMatchStatus($: HLTVPage): MatchStatus {
   return status
 }
 
+function teamFromHrefAndName(
+  link: HLTVPageElement,
+  logoEl?: HLTVPageElement,
+  rank?: number
+): FullMatchTeam | undefined {
+  if (!link.exists()) return undefined
+  const href = link.attr('href')
+  const id = href ? getIdAt(2, href) : undefined
+  const name = link.trimText() || link.text().trim()
+  if (!name) return undefined
+  const logoRoot = logoEl && logoEl.exists() ? logoEl : link.parent()
+  const logo =
+    logoRoot.find('img.night-only').attr('src') ||
+    logoRoot.find('img.night-only').attr('data-cookieblock-src') ||
+    logoRoot.find('img:not(.day-only)').first().attr('src') ||
+    logoRoot.find('img:not(.day-only)').first().attr('data-cookieblock-src')
+  return { name, id, logo, rank }
+}
+
+/** Clássico: `.team1-gradient` / `.team2-gradient` */
+function getTeamFromGradient($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined {
+  const root = $(`.team${n}-gradient`)
+  if (!root.exists()) return undefined
+  const link = root.find('a[href*="/team/"]').first()
+  const rank = $('.teamRanking a')
+    .eq(n - 1)
+    .contents()
+    .eq(1)
+    .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  const t = teamFromHrefAndName(link, root, rank)
+  if (t) return t
+  const name = root.find('.teamName').text().trim()
+  if (!name) return undefined
+  return {
+    name,
+    id: root.find('a').attrThen('href', (h) => (h ? getIdAt(2, h) : undefined)),
+    logo:
+      root.find('img.night-only').attr('src') ||
+      root.find('img.night-only').attr('data-cookieblock-src') ||
+      root.find('img:not(.day-only)').first().attr('src') ||
+      root.find('img:not(.day-only)').first().attr('data-cookieblock-src'),
+    rank
+  }
+}
+
+/** Listagens / header: `.match-team.team1` (getMatches) */
+function getTeamFromMatchTeamRow($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined {
+  const row = $(`.match-team.team${n}`)
+  if (!row.exists()) return undefined
+  const link = row.find('a[href*="/team/"]').first()
+  const idAttr = row.numFromAttr(`team${n}`)
+  const rank = $('.teamRanking a')
+    .eq(n - 1)
+    .contents()
+    .eq(1)
+    .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  if (link.exists()) {
+    const t = teamFromHrefAndName(link, row, rank)
+    if (t) return t
+  }
+  const name =
+    row.find('.match-team-name').first().trimText() ||
+    row.find('.team').first().trimText() ||
+    row.find('.text-ellipsis').first().trimText()
+  if (!name && idAttr == null) return undefined
+  const logo =
+    row.find('.match-team-logo').first().attr('src') ||
+    row.find('.match-team-logo').first().attr('data-cookieblock-src') ||
+    row.find('img').first().attr('src') ||
+    row.find('img').first().attr('data-cookieblock-src')
+  return {
+    name: name || `Team ${idAttr}`,
+    id: idAttr ?? link.attrThen('href', (h) => (h ? getIdAt(2, h) : undefined)),
+    logo,
+    rank
+  }
+}
+
+/** Caixa "pick a winner" */
+function getTeamFromPickWinner($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined {
+  const box = $(`.pick-a-winner-team.team${n}`)
+  if (!box.exists()) return undefined
+  const link = box.find('a[href*="/team/"]').first()
+  const rank = $('.teamRanking a')
+    .eq(n - 1)
+    .contents()
+    .eq(1)
+    .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  return teamFromHrefAndName(link, box, rank)
+}
+
+/** Primeira linha de odds: células com link para equipa */
+function getTeamFromProviderOdds($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined {
+  const row = $('tr.provider:not(.hidden)').first()
+  if (!row.exists()) return undefined
+  const cell =
+    n === 1 ? row.find('.odds-cell').first() : row.find('.odds-cell').last()
+  const link = cell.find('a[href*="/team/"]').first()
+  const rank = $('.teamRanking a')
+    .eq(n - 1)
+    .contents()
+    .eq(1)
+    .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  return teamFromHrefAndName(link, cell, rank)
+}
+
 function getTeam($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined {
-  return $(`.team${n}-gradient`).exists()
-    ? {
-        name: $(`.team${n}-gradient .teamName`).text(),
-        id: $(`.team${n}-gradient a`).attrThen('href', (href) =>
-          href ? getIdAt(2, href) : undefined
-        ),
-        logo: $(`.team${n}-gradient img.night-only`).attr('src') || 
-               $(`.team${n}-gradient img.night-only`).attr('data-cookieblock-src') || 
-               $(`.team${n}-gradient img:not(.day-only)`).attr('src') || 
-               $(`.team${n}-gradient img:not(.day-only)`).attr('data-cookieblock-src'),
-        rank: $('.teamRanking a')
-          .eq(n - 1)
-          .contents()
-          .eq(1)
-          .textThen((x) => parseNumber(x.replace(/#/g, '')))
-      }
-    : undefined
+  const candidates = [
+    getTeamFromGradient($, n),
+    getTeamFromMatchTeamRow($, n),
+    getTeamFromPickWinner($, n),
+    getTeamFromProviderOdds($, n)
+  ]
+  for (const t of candidates) {
+    if (t?.name && t.id != null) return t
+  }
+  for (const t of candidates) {
+    if (t?.name) return t
+  }
+  return undefined
 }
 
 function getVetoes($: HLTVPage, team1?: Team, team2?: Team): Veto[] {
@@ -679,6 +781,13 @@ function getWinnerTeam(
   }
 
   if ($('.team2-gradient .won').exists()) {
+    return team2
+  }
+
+  if ($('.match-team.team1 .won').exists()) {
+    return team1
+  }
+  if ($('.match-team.team2 .won').exists()) {
     return team2
   }
 }
