@@ -180,14 +180,22 @@ export const generateRandomSuffix = () => {
 export const percentageToDecimalOdd = (odd: number): number =>
   parseFloat(((1 / odd) * 100).toFixed(2))
 
-export function getIdAt(index: number, href: string): number | undefined
-export function getIdAt(index: number): (href: string) => number | undefined
+export function getIdAt(
+  index: number,
+  href: string | undefined
+): number | undefined
+export function getIdAt(
+  index: number
+): (href: string | undefined) => number | undefined
 export function getIdAt(index?: number, href?: string): any {
   switch (arguments.length) {
     case 1:
-      return (href: string) => getIdAt(index!, href)
+      return (h: string | undefined) => getIdAt(index!, h)
     default:
-      return parseNumber(href!.split('/')[index!])
+      if (href == null || href === '') {
+        return undefined
+      }
+      return parseNumber(href.split('/')[index!])
   }
 }
 
@@ -205,4 +213,41 @@ export const parseNumber = (str: string | undefined): number | undefined => {
 
 export const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Context attached to scraper errors for logs (worker / monitoring). */
+export type ScrapeErrorContext = {
+  endpoint: string
+  matchId?: number
+  pageUrl?: string
+  step?: string
+  /** What the parser expected (e.g. non-empty href). */
+  expected?: string
+  /** What was present instead (e.g. undefined, snippet). */
+  got?: string
+  selector?: string
+  hint?: string
+  extra?: Record<string, unknown>
+}
+
+/**
+ * Wraps an error with JSON `scrapeContext` on the Error object and in `message`
+ * so plain `${err}` in loggers still shows useful detail.
+ */
+export function toScrapeError(err: unknown, ctx: ScrapeErrorContext): Error {
+  const base = err instanceof Error ? err : new Error(String(err))
+  const scrapeContext = {
+    ...ctx,
+    originalMessage: base.message,
+    originalName: base.name,
+  }
+  const wrapped = new Error(
+    `${base.message} | HLTV scrapeContext=${JSON.stringify(scrapeContext)}`
+  )
+  wrapped.name = 'HLTVScrapeError'
+  wrapped.stack = base.stack
+  ;(wrapped as Error & { scrapeContext: typeof scrapeContext }).scrapeContext =
+    scrapeContext
+  ;(wrapped as Error & { cause?: unknown }).cause = base
+  return wrapped
 }

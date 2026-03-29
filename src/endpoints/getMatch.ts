@@ -5,10 +5,12 @@ import { Team } from '../shared/Team'
 import { Event } from '../shared/Event'
 import {
   fetchPage,
+  fetchPageFlareSolverr,
   generateRandomSuffix,
   getIdAt,
   parseNumber,
-  percentageToDecimalOdd
+  percentageToDecimalOdd,
+  toScrapeError
 } from '../utils'
 import { Player } from '../shared/Player'
 import {
@@ -126,61 +128,103 @@ export interface FullMatch {
 export const getMatch =
   (config: HLTVConfig) =>
   async ({ id }: { id: number }): Promise<FullMatch> => {
-    const $ = HLTVScraper(
-      await fetchPage(
-        `https://www.hltv.org/matches/${id}/${generateRandomSuffix()}`,
-        config.loadPage
-      )
-    )
+    const pageUrl = `https://www.hltv.org/matches/${id}/`
+    const requestUrl = `${pageUrl}${generateRandomSuffix()}`
+    let step = 'init'
+    let htmlLength: number | undefined
+    let $: ReturnType<typeof HLTVScraper> | undefined
 
-    const title = $('.timeAndEvent .text').trimText()
-    const date = $('.timeAndEvent .date').numFromAttr('data-unix')
-    const format = getFormat($)
-    const significance = getMatchSignificance($)
-    const status = getMatchStatus($)
-    const hasScorebot = $('#scoreboardElement').exists()
-    const statsId = getStatsId($)
-    const team1 = getTeam($, 1)
-    const team2 = getTeam($, 2)
-    const vetoes = getVetoes($, team1, team2)
-    const event = getEvent($)
-    const odds = getOdds($)
-    const oddsCommunity = getCommunityOdds($)
-    const maps = getMaps($)
-    const players = getPlayers($)
-    const streams = getStreams($)
-    const demos = getDemos($)
-    const highlightedPlayers = getHighlightedPlayers($)
-    const headToHead = getHeadToHead($)
-    const highlights = getHighlights($, team1, team2)
-    const playerOfTheMatch = getPlayerOfTheMatch($, players)
-    const winnerTeam = getWinnerTeam($, team1, team2)
-    const resultMatch = countMapWins(maps)
+    const domSnapshot = (): Record<string, boolean> | undefined => {
+      if (!$) return undefined
+      try {
+        return {
+          timeAndEvent: $('.timeAndEvent').exists(),
+          team1gradient: $('.team1-gradient').exists(),
+          team2gradient: $('.team2-gradient').exists(),
+          scoreboardElement: $('#scoreboardElement').exists()
+        }
+      } catch {
+        return undefined
+      }
+    }
 
-    return {
-      id,
-      statsId,
-      significance,
-      team1,
-      team2,
-      resultMatch,
-      winnerTeam,
-      date,
-      format,
-      event,
-      maps,
-      players,
-      streams,
-      status,
-      title,
-      hasScorebot,
-      highlightedPlayers,
-      playerOfTheMatch,
-      headToHead,
-      vetoes,
-      highlights,
-      demos,
-      odds: odds.concat(oddsCommunity ? [oddsCommunity] : [])
+    try {
+      step = 'fetchPage'
+      const root = await fetchPage(requestUrl, config.loadPage)
+      htmlLength = root.html()?.length ?? 0
+
+      step = 'HLTVScraper'
+      $ = HLTVScraper(root)
+
+      step = 'parse:metadata,teams,vetoes,event'
+      const title = $('.timeAndEvent .text').trimText()
+      const date = $('.timeAndEvent .date').numFromAttr('data-unix')
+      const format = getFormat($)
+      const significance = getMatchSignificance($)
+      const status = getMatchStatus($)
+      const hasScorebot = $('#scoreboardElement').exists()
+      const statsId = getStatsId($)
+      const team1 = getTeam($, 1)
+      const team2 = getTeam($, 2)
+      const vetoes = getVetoes($, team1, team2)
+      const event = getEvent($)
+
+      step = 'parse:odds,maps,players,streams,demos'
+      const odds = getOdds($)
+      const oddsCommunity = getCommunityOdds($)
+      const maps = getMaps($)
+      const players = getPlayers($)
+      const streams = getStreams($)
+      const demos = getDemos($)
+      const highlightedPlayers = getHighlightedPlayers($)
+
+      step = 'parse:headToHead,highlights,potm,winner'
+      const headToHead = getHeadToHead($)
+      const highlights = getHighlights($, team1, team2)
+      const playerOfTheMatch = getPlayerOfTheMatch($, players)
+      const winnerTeam = getWinnerTeam($, team1, team2)
+      const resultMatch = countMapWins(maps)
+
+      return {
+        id,
+        statsId,
+        significance,
+        team1,
+        team2,
+        resultMatch,
+        winnerTeam,
+        date,
+        format,
+        event,
+        maps,
+        players,
+        streams,
+        status,
+        title,
+        hasScorebot,
+        highlightedPlayers,
+        playerOfTheMatch,
+        headToHead,
+        vetoes,
+        highlights,
+        demos,
+        odds: odds.concat(oddsCommunity ? [oddsCommunity] : [])
+      }
+    } catch (err) {
+      throw toScrapeError(err, {
+        endpoint: 'getMatch',
+        matchId: id,
+        pageUrl,
+        step,
+        expected: 'HTML matching current HLTV match page selectors (see step)',
+        got:
+          step === 'fetchPage'
+            ? 'fetch failed before cheerio root'
+            : `serialized DOM length≈${htmlLength}`,
+        hint:
+          'If step is past fetchPage, open pageUrl in a browser and diff .timeAndEvent / maps / head-to-head markup.',
+        extra: { requestUrl, dom: domSnapshot() }
+      })
     }
   }
 
@@ -270,9 +314,17 @@ function getVetoes($: HLTVPage, team1?: Team, team2?: Team): Veto[] {
 }
 
 function getEvent($: HLTVPage): Event {
+  let link = $('.timeAndEvent .event a').first()
+  if (!link.exists()) {
+    link = $('.timeAndEvent a[href*="/events/"]').first()
+  }
+  const href = link.attr('href')
+  if (!href) {
+    link = $('.timeAndEvent a[href*="/events/"]').first()
+  }
   return {
-    name: $('.timeAndEvent .event a').text(),
-    id: $('.timeAndEvent .event a').attrThen('href', getIdAt(2))
+    name: link.exists() ? link.text().trim() : $('.timeAndEvent .event').text().trim(),
+    id: link.attrThen('href', (h) => (h ? getIdAt(2, h) : undefined)),
   }
 }
 
