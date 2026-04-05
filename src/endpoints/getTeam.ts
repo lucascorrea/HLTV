@@ -4,6 +4,7 @@ import { Article } from '../shared/Article'
 import { Country } from '../shared/Country'
 import { Player } from '../shared/Player'
 import { fetchPage, generateRandomSuffix, getIdAt, parseNumber } from '../utils'
+import { fetchPageFlareSolverr } from '../utils'
 
 export enum TeamPlayerType {
   Coach = 'Coach',
@@ -66,7 +67,7 @@ export const getTeam =
   (config: HLTVConfig) =>
   async ({ id }: { id: number }): Promise<FullTeam> => {
     const $ = HLTVScraper(
-      await fetchPage(
+      await fetchPageFlareSolverr(
         `https://www.hltv.org/team/${id}/${generateRandomSuffix()}`,
         config.loadPage
       )
