@@ -179,6 +179,9 @@ export type { Team } from './shared/Team'
 export type { EventType } from './shared/EventType'
 
 export {
+  defaultLoadPage,
   defaultLoadPageFlareSolverr,
   type FlareSolverrLoadPageOptions,
 } from './config'
+
+export { fetchPage, fetchPageFlareSolverr } from './utils'
