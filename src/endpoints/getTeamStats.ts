@@ -7,7 +7,7 @@ import { MatchType } from '../shared/MatchType'
 import { Player } from '../shared/Player'
 import { Event } from '../shared/Event'
 import { RankingFilter } from '../shared/RankingFilter'
-import { fetchPageFlareSolverr, generateRandomSuffix, getIdAt } from '../utils'
+import { fetchPageFlareSolverr, getIdAt } from '../utils'
 import { MatchStatsPreview } from './getMatchesStats'
 
 export interface TeamMapStats {
@@ -50,6 +50,8 @@ export interface FullTeamStats {
 export interface GetTeamStatsArguments {
   id: number
   currentRosterOnly?: boolean
+  /** Performance toggle: events page is heavy and usually unused downstream. */
+  includeEvents?: boolean
   startDate?: string
   endDate?: string
   matchType?: MatchType
@@ -71,6 +73,7 @@ export const getTeamStats =
       ...(options.maps ? { maps: options.maps.map(toMapFilter) } : {}),
       ...(options.bestOfX ? { bestOfX: options.bestOfX } : {})
     })
+    const includeEvents = options.includeEvents !== false
 
     const loadStats = config.loadPageFlareSolverr ?? config.loadPage
 
@@ -83,6 +86,7 @@ export const getTeamStats =
 
     const name = $('.context-item-name').last().text()
     const currentTeam = { photo: '', id: options.id, name }
+    const teamSlug = toTeamSlug(name) || '-'
 
     const currentLineup = getPlayersByContainer(
       getContainerByText($, 'Current lineup')
@@ -112,32 +116,29 @@ export const getTeamStats =
 
     const standins = getPlayersByContainer(getContainerByText($, 'Standins'))
 
-    const [m$, e$, mp$] = await Promise.all([
-      fetchPageFlareSolverr(
-        options.currentRosterOnly
-          ? `https://www.hltv.org/stats/lineup/matches?${currentRosterQuery}&${query}`
-          : `https://www.hltv.org/stats/teams/matches/${
-              options.id
-            }/${generateRandomSuffix()}?${query}`,
-        loadStats
-      ).then(HLTVScraper),
-      fetchPageFlareSolverr(
-        options.currentRosterOnly
-          ? `https://www.hltv.org/stats/lineup/events?${currentRosterQuery}&${query}`
-          : `https://www.hltv.org/stats/teams/events/${
-              options.id
-            }/${generateRandomSuffix()}?${query}`,
-        loadStats
-      ).then(HLTVScraper),
-      fetchPageFlareSolverr(
-        options.currentRosterOnly
-          ? `https://www.hltv.org/stats/lineup/maps?${currentRosterQuery}&${query}`
-          : `https://www.hltv.org/stats/teams/maps/${
-              options.id
-            }/${generateRandomSuffix()}?${query}`,
-        loadStats
-      ).then(HLTVScraper)
-    ])
+    const matchesUrl = options.currentRosterOnly
+      ? `https://www.hltv.org/stats/lineup/matches?${currentRosterQuery}&${query}`
+      : `https://www.hltv.org/stats/teams/matches/${options.id}/${teamSlug}?${query}`
+    const eventsUrl = options.currentRosterOnly
+      ? `https://www.hltv.org/stats/lineup/events?${currentRosterQuery}&${query}`
+      : `https://www.hltv.org/stats/teams/events/${options.id}/${teamSlug}?${query}`
+    const mapsUrl = options.currentRosterOnly
+      ? `https://www.hltv.org/stats/lineup/maps?${currentRosterQuery}&${query}`
+      : `https://www.hltv.org/stats/teams/maps/${options.id}/${teamSlug}?${query}`
+
+    // Keep matches sequential for parser stability; load events/maps in parallel for speed.
+    const m$ = HLTVScraper(await fetchPageFlareSolverr(matchesUrl, loadStats))
+    let e$: HLTVPage | null = null
+    let mp$ = HLTVScraper(await fetchPageFlareSolverr(mapsUrl, loadStats))
+    if (includeEvents) {
+      e$ = HLTVScraper(await fetchPageFlareSolverr(eventsUrl, loadStats))
+      if (e$('.stats-table tbody tr').length === 0) {
+        e$ = HLTVScraper(await fetchPageFlareSolverr(eventsUrl, loadStats))
+      }
+    }
+    if (mp$('.two-grid .col .stats-rows').length === 0) {
+      mp$ = HLTVScraper(await fetchPageFlareSolverr(mapsUrl, loadStats))
+    }
 
     const overviewStats = $('.standard-box .large-strong')
 
@@ -158,11 +159,19 @@ export const getTeamStats =
     const matches = m$('.stats-table tbody tr')
       .toArray()
       .map((el) => {
+        const dateLink = el.find('.time a')
+        const fallbackDate = el.find('td').first().find('a')
+        const mapCell = el.find('.statsMapPlayed')
+        const fallbackMapCell = el.find('td').eq(4)
+        const opponentLink = el.find('img.flag').parent()
+        const fallbackOpponentLink = el.find('td').eq(3).find('a')
+        const mapHref =
+          dateLink.attr('href') || fallbackDate.attr('href') || ''
         const statsDetailText = el.find('.statsDetail').text();
         const [team1Result, team2Result] = statsDetailText ? statsDetailText.split(' - ').map(Number) : [0, 0];
 
         return {
-          date: getTimestamp(el.find('.time a').text()),
+          date: getTimestamp(dateLink.text() || fallbackDate.text()),
           event: {
             id: Number(
               el
@@ -175,28 +184,31 @@ export const getTeamStats =
           },
           team1: currentTeam,
           team2: {
-            id: el.find('img.flag').parent().attrThen('href', getIdAt(3)),
-            name: el.find('img.flag').parent().trimText()!
+            id: (opponentLink.attrThen('href', getIdAt(3)) ??
+              fallbackOpponentLink.attrThen('href', getIdAt(3)))!,
+            name: opponentLink.trimText() || fallbackOpponentLink.trimText()!
           },
-          map: fromMapName(el.find('.statsMapPlayed').text()),
-          mapStatsId: el.find('.time a').attrThen('href', getIdAt(4))!,
+          map: fromMapName(mapCell.text() || fallbackMapCell.text()),
+          mapStatsId: getIdAt(4, mapHref)!,
           result: { team1: Number(team1Result), team2: Number(team2Result) }
         }
       })
 
-    const events = e$('.stats-table tbody tr')
-      .toArray()
-      .map((el) => {
-        const eventEl = el.find('.image-and-label').first()
+    const events = includeEvents && e$
+      ? e$('.stats-table tbody tr')
+          .toArray()
+          .map((el) => {
+            const eventEl = el.find('.image-and-label').first()
 
-        return {
-          place: el.find('.statsCenterText').text(),
-          event: {
-            id: Number(eventEl.attr('href')!?.split('event=')[1]?.split('&')[0]),
-            name: eventEl.text()
-          }
-        }
-      })
+            return {
+              place: el.find('.statsCenterText').text(),
+              event: {
+                id: Number(eventEl.attr('href')!?.split('event=')[1]?.split('&')[0]),
+                name: eventEl.text()
+              }
+            }
+          })
+      : []
 
     const getMapStat = (mapEl: HLTVPageElement, i: number) =>
       mapEl.find('.stats-row').eq(i).children().last().text()
@@ -261,3 +273,13 @@ function getTimestamp(source: string): number {
 
   return new Date([month, day, year].join('/')).getTime()
 }
+
+function toTeamSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+}
+
