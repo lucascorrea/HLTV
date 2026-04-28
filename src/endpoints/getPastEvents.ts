@@ -52,7 +52,8 @@ export const getPastEvents =
       $ = HLTVScraper(
         await fetchPage(
           `https://www.hltv.org/events/archive?${query}&offset=${page * 50}`,
-          config.loadPage
+          config.loadPage,
+          config.loadPageFlareSolverr
         )
       )
 

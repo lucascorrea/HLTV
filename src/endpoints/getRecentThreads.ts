@@ -20,7 +20,8 @@ export const getRecentThreads =
     const $ = HLTVScraper(
       await fetchPage(
         `https://www.hltv.org/${generateRandomSuffix()}`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       )
     )
 

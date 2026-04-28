@@ -38,7 +38,11 @@ export const getEvents =
     })
 
     const $ = HLTVScraper(
-      await fetchPage(`https://www.hltv.org/events?${query}`, config.loadPage)
+      await fetchPage(
+        `https://www.hltv.org/events?${query}`,
+        config.loadPage,
+        config.loadPageFlareSolverr
+      )
     )
 
     const featuredOngoingEvents = $(

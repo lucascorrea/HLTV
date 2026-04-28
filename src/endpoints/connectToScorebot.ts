@@ -207,7 +207,8 @@ export const connectToScorebot =
   }: ConnectToScorebotParams) => {
     fetchPage(
       `https://www.hltv.org/matches/${id}/${generateRandomSuffix()}`,
-      config.loadPage
+      config.loadPage,
+      config.loadPageFlareSolverr
     ).then(($) => {
       const url = $('#scoreboardElement')
         .attr('data-scorebot-url')!

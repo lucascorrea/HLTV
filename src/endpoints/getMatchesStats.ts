@@ -53,7 +53,8 @@ export const getMatchesStats =
       $ = HLTVScraper(
         await fetchPage(
           `https://www.hltv.org/stats/matches?${query}&offset=${page * 50}`,
-          config.loadPage
+          config.loadPage,
+          config.loadPageFlareSolverr
         )
       )
 

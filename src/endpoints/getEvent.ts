@@ -64,7 +64,8 @@ export const getEvent =
     const $ = HLTVScraper(
       await fetchPage(
         `https://www.hltv.org/events/${id}/${generateRandomSuffix()}`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       )
     )
 

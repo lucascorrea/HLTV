@@ -40,7 +40,8 @@ export const getTeamRanking =
         `https://www.hltv.org/ranking/teams/${year ?? ''}/${month ?? ''}/${
           day ?? ''
         }`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       )
     )
 
@@ -53,7 +54,8 @@ export const getTeamRanking =
       $ = HLTVScraper(
         await fetchPage(
           `https://www.hltv.org/${countryRankingLink}`,
-          config.loadPage
+          config.loadPage,
+          config.loadPageFlareSolverr
         )
       )
     }

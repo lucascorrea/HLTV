@@ -133,26 +133,27 @@ export const fetchPageFlareSolverr = async (
   }
 }
 
-// Implementação com Playwright
+// Implementação com Playwright; opcionalmente 1 retry via FlareSolverr se Playwright falhar
 export const fetchPage = async (
   url: string,
-  loadPage: (url: string) => Promise<string>
+  loadPage: (url: string) => Promise<string>,
+  loadPageFlareSolverr?: (url: string) => Promise<string>
 ): Promise<cheerio.Root> => {
   let semaphoreAcquired = false
   let page: any = null
-  
+
   try {
     await playwrightSemaphore.acquire()
     semaphoreAcquired = true
-    
+
     const browserInstance = await getBrowser()
     page = await browserInstance.newPage()
-    
+
     await page.setViewportSize({ width: 1280, height: 720 })
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
-    
+
     const html = await page.content()
-    
+
     await page.close()
     page = null
 
@@ -162,6 +163,10 @@ export const fetchPage = async (
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     console.error(`Erro ao buscar página ${url}: ${errorMessage}`)
+    if (loadPageFlareSolverr) {
+      console.error(`fetchPage: retry once via FlareSolverr ${url}`)
+      return await fetchPageFlareSolverr(url, loadPageFlareSolverr)
+    }
     throw error
   } finally {
     if (page) {

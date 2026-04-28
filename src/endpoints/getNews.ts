@@ -61,7 +61,9 @@ export const getNews =
       url = `${url}/${year}/${month}`
     }
 
-    const $ = HLTVScraper(await fetchPage(url, config.loadPage))
+    const $ = HLTVScraper(
+      await fetchPage(url, config.loadPage, config.loadPageFlareSolverr)
+    )
 
     const news = $('.article')
       .toArray()

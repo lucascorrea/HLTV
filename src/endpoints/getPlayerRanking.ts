@@ -50,7 +50,8 @@ export const getPlayerRanking =
     const $ = HLTVScraper(
       await fetchPage(
         `https://www.hltv.org/stats/players?${query}`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       )
     )
 

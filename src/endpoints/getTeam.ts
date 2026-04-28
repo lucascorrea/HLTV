@@ -280,7 +280,8 @@ export const getTeam =
           }
         };
       })
-      .sort((a, b) => b.date - a.date) // Ordem decrescente (mais recente -> mais antigo)
+      // Newest first; tie-break by match id so same-day rows stay deterministic (streak / last-5 UI).
+      .sort((a, b) => b.date - a.date || b.id - a.id)
 
     return {
       id,

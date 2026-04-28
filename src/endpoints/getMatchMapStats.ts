@@ -105,11 +105,13 @@ export const getMatchMapStats =
     const [m$, p$] = await Promise.all([
       fetchPage(
         `https://www.hltv.org/stats/matches/mapstatsid/${id}/-`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       ).then(HLTVScraper),
       fetchPage(
         `https://www.hltv.org/stats/matches/performance/mapstatsid/${id}/-`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       ).then(HLTVScraper)
     ])
 

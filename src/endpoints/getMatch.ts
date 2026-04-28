@@ -5,7 +5,6 @@ import { Team } from '../shared/Team'
 import { Event } from '../shared/Event'
 import {
   fetchPage,
-  fetchPageFlareSolverr,
   generateRandomSuffix,
   getIdAt,
   parseNumber,
@@ -150,7 +149,11 @@ export const getMatch =
 
     try {
       step = 'fetchPage'
-      const root = await fetchPage(requestUrl, config.loadPage)
+      const root = await fetchPage(
+        requestUrl,
+        config.loadPage,
+        config.loadPageFlareSolverr
+      )
       htmlLength = root.html()?.length ?? 0
 
       step = 'HLTVScraper'
@@ -268,16 +271,44 @@ function teamFromHrefAndName(
   return { name, id, logo, rank }
 }
 
+/**
+ * Rank must come from each lineup's `.teamRanking`, not global `.teamRanking a`.
+ * Unranked teams have no `<a>` (only "Unranked" text), so a single ranked team
+ * would otherwise become `.eq(0)` for both parsers and shift ranks to team1.
+ */
+function getWorldRankFromMatchLineups($: HLTVPage, n: 1 | 2): number | undefined {
+  const box = $('#lineups .lineup').eq(n - 1)
+  if (!box.exists()) {
+    const legacy = $('.teamRanking a').eq(n - 1)
+    if (!legacy.exists()) return undefined
+    const fromText = legacy.text().match(/#(\d+)/)
+    if (fromText) return parseNumber(fromText[1])
+    return legacy
+      .contents()
+      .eq(1)
+      .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  }
+  const ranking = box.find('.teamRanking').first()
+  if (!ranking.exists()) return undefined
+  const link = ranking.find('a[href*="/ranking/"]').first()
+  if (link.exists()) {
+    const fromText = link.text().match(/#(\d+)/)
+    if (fromText) return parseNumber(fromText[1])
+    return link
+      .contents()
+      .eq(1)
+      .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  }
+  if (/unranked/i.test(ranking.text())) return undefined
+  return undefined
+}
+
 /** Clássico: `.team1-gradient` / `.team2-gradient` */
 function getTeamFromGradient($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined {
   const root = $(`.team${n}-gradient`)
   if (!root.exists()) return undefined
   const link = root.find('a[href*="/team/"]').first()
-  const rank = $('.teamRanking a')
-    .eq(n - 1)
-    .contents()
-    .eq(1)
-    .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  const rank = getWorldRankFromMatchLineups($, n)
   const t = teamFromHrefAndName(link, root, rank)
   if (t) return t
   const name = root.find('.teamName').text().trim()
@@ -300,11 +331,7 @@ function getTeamFromMatchTeamRow($: HLTVPage, n: 1 | 2): FullMatchTeam | undefin
   if (!row.exists()) return undefined
   const link = row.find('a[href*="/team/"]').first()
   const idAttr = row.numFromAttr(`team${n}`)
-  const rank = $('.teamRanking a')
-    .eq(n - 1)
-    .contents()
-    .eq(1)
-    .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  const rank = getWorldRankFromMatchLineups($, n)
   if (link.exists()) {
     const t = teamFromHrefAndName(link, row, rank)
     if (t) return t
@@ -332,11 +359,7 @@ function getTeamFromPickWinner($: HLTVPage, n: 1 | 2): FullMatchTeam | undefined
   const box = $(`.pick-a-winner-team.team${n}`)
   if (!box.exists()) return undefined
   const link = box.find('a[href*="/team/"]').first()
-  const rank = $('.teamRanking a')
-    .eq(n - 1)
-    .contents()
-    .eq(1)
-    .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  const rank = getWorldRankFromMatchLineups($, n)
   return teamFromHrefAndName(link, box, rank)
 }
 
@@ -347,11 +370,7 @@ function getTeamFromProviderOdds($: HLTVPage, n: 1 | 2): FullMatchTeam | undefin
   const cell =
     n === 1 ? row.find('.odds-cell').first() : row.find('.odds-cell').last()
   const link = cell.find('a[href*="/team/"]').first()
-  const rank = $('.teamRanking a')
-    .eq(n - 1)
-    .contents()
-    .eq(1)
-    .textThen((x) => parseNumber(x.replace(/#/g, '')))
+  const rank = getWorldRankFromMatchLineups($, n)
   return teamFromHrefAndName(link, cell, rank)
 }
 

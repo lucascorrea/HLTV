@@ -86,7 +86,8 @@ export const getResults =
       $ = HLTVScraper(
         await fetchPage(
           `https://www.hltv.org/results?${query}&offset=${page * 100}`,
-          config.loadPage
+          config.loadPage,
+          config.loadPageFlareSolverr
         )
       )
 

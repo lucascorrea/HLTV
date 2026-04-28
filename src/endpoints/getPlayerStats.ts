@@ -100,19 +100,22 @@ export const getPlayerStats =
         `https://www.hltv.org/stats/players/${
           options.id
         }/${generateRandomSuffix()}?${query}`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       ).then(HLTVScraper),
       fetchPage(
         `https://www.hltv.org/stats/players/individual/${
           options.id
         }/${generateRandomSuffix()}?${query}`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       ).then(HLTVScraper),
       fetchPage(
         `https://www.hltv.org/stats/players/matches/${
           options.id
         }/${generateRandomSuffix()}?${query}`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       ).then(HLTVScraper)
     ])
 

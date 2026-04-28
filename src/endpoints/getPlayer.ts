@@ -48,7 +48,8 @@ export const getPlayer =
     const $ = HLTVScraper(
       await fetchPage(
         `https://www.hltv.org/player/${id}/${generateRandomSuffix()}`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       )
     )
 
