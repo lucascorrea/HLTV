@@ -7,7 +7,7 @@ import { MatchType } from '../shared/MatchType'
 import { Player } from '../shared/Player'
 import { Event } from '../shared/Event'
 import { RankingFilter } from '../shared/RankingFilter'
-import { fetchPageFlareSolverr, getIdAt } from '../utils'
+import { fetchPageFlareSolverr, getIdAt, parseNumber } from '../utils'
 import { MatchStatsPreview } from './getMatchesStats'
 
 export interface TeamMapStats {
@@ -140,21 +140,7 @@ export const getTeamStats =
       mp$ = HLTVScraper(await fetchPageFlareSolverr(mapsUrl, loadStats))
     }
 
-    const overviewStats = $('.standard-box .large-strong')
-
-    const overviewText = overviewStats.eq(1).text();
-    const [wins, draws, losses] = overviewText ? overviewText?.split('/').map(Number) : [0, 0, 0];
-
-    const overview = {
-      mapsPlayed: overviewStats.eq(0).numFromText()!,
-      totalKills: overviewStats.eq(2).numFromText()!,
-      totalDeaths: overviewStats.eq(3).numFromText()!,
-      roundsPlayed: overviewStats.eq(4).numFromText()!,
-      kdRatio: overviewStats.eq(5).numFromText()!,
-      wins: wins ?? 0,
-      draws: draws ?? 0,
-      losses: losses ?? 0
-    }
+    const overview = mergeTeamOverviewFromStatsRows($, readLegacyLargeStrongOverview($))
 
     const matches = m$('.stats-table tbody tr')
       .toArray()
@@ -255,6 +241,103 @@ function getContainerByText($: HLTVPage, text: string) {
     .filter((_, el) => el.text() === text)
     .parent()
     .next()
+}
+
+/** HLTV team stats page often uses `.stats-row` label + value (same pattern as player stats). */
+function getTeamOverviewStatByLabel($: HLTVPage, labelIncludes: string): number | undefined {
+  const lbl = labelIncludes.toLowerCase()
+  const row = $('.stats-row').filter((_, x) =>
+    x?.text()?.toLowerCase()?.includes(lbl)
+  )
+  if (!row.exists()) return undefined
+  const raw = row
+    .find('span')
+    .eq(1)
+    .text()
+    .replace(/%/g, '')
+    .replace(/,/g, '')
+    .trim()
+  return parseNumber(raw)
+}
+
+function getTeamWDLFromStatsRows($: HLTVPage): { wins: number; draws: number; losses: number } | undefined {
+  const row = $('.stats-row').filter((_, x) => {
+    const t = x?.text()?.toLowerCase() ?? ''
+    return t.includes('draw') && t.includes('loss')
+  })
+  if (!row.exists()) return undefined
+  const val = row.find('span').eq(1).text()
+  const parts = val
+    .split(/\s*\/\s*/)
+    .map((p) => parseNumber(p.replace(/,/g, '').trim()))
+    .filter((n): n is number => n !== undefined && !Number.isNaN(n))
+  if (parts.length >= 3) {
+    return { wins: parts[0], draws: parts[1], losses: parts[2] }
+  }
+  return undefined
+}
+
+function readLegacyLargeStrongOverview($: HLTVPage): FullTeamStats['overview'] {
+  const overviewStats = $('.standard-box .large-strong')
+  const overviewText = overviewStats.eq(1).text()
+  const [wins, draws, losses] = overviewText
+    ? overviewText.split('/').map((s) => parseNumber(s.trim()) ?? 0)
+    : [0, 0, 0]
+
+  return {
+    mapsPlayed: overviewStats.eq(0).numFromText() ?? 0,
+    totalKills: overviewStats.eq(2).numFromText() ?? 0,
+    totalDeaths: overviewStats.eq(3).numFromText() ?? 0,
+    roundsPlayed: overviewStats.eq(4).numFromText() ?? 0,
+    kdRatio: overviewStats.eq(5).numFromText() ?? 0,
+    wins: wins ?? 0,
+    draws: draws ?? 0,
+    losses: losses ?? 0
+  }
+}
+
+function mergeTeamOverviewFromStatsRows(
+  $: HLTVPage,
+  legacy: FullTeamStats['overview']
+): FullTeamStats['overview'] {
+  const rowMaps = getTeamOverviewStatByLabel($, 'maps played')
+  const rowKills = getTeamOverviewStatByLabel($, 'total kills')
+  const rowDeaths = getTeamOverviewStatByLabel($, 'total deaths')
+  const rowRounds = getTeamOverviewStatByLabel($, 'rounds played')
+  const wdl = getTeamWDLFromStatsRows($)
+
+  const pick = (fromRow: number | undefined, fromLegacy: number) =>
+    fromRow !== undefined && fromRow > 0 ? fromRow : fromLegacy
+
+  const wins = wdl && (wdl.wins > 0 || wdl.draws > 0 || wdl.losses > 0) ? wdl.wins : legacy.wins
+  const draws = wdl && (wdl.wins > 0 || wdl.draws > 0 || wdl.losses > 0) ? wdl.draws : legacy.draws
+  const losses = wdl && (wdl.wins > 0 || wdl.draws > 0 || wdl.losses > 0) ? wdl.losses : legacy.losses
+
+  const totalKills = pick(rowKills, legacy.totalKills)
+  const totalDeaths = pick(rowDeaths, legacy.totalDeaths)
+  const mapsPlayed = pick(rowMaps, legacy.mapsPlayed)
+  const roundsPlayed = pick(rowRounds, legacy.roundsPlayed)
+
+  let kd =
+    getTeamOverviewStatByLabel($, 'k/d ratio') ?? getTeamOverviewStatByLabel($, 'k/d')
+  if (kd === undefined || kd <= 0 || Number.isNaN(kd)) {
+    if (totalKills > 0 && totalDeaths > 0) {
+      kd = totalKills / totalDeaths
+    } else {
+      kd = legacy.kdRatio > 0 ? legacy.kdRatio : 0
+    }
+  }
+
+  return {
+    mapsPlayed,
+    totalKills,
+    totalDeaths,
+    roundsPlayed,
+    kdRatio: kd,
+    wins,
+    draws,
+    losses
+  }
 }
 
 function getPlayersByContainer(container: HLTVPageElement) {
