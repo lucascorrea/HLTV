@@ -1,3 +1,4 @@
+import { execFile } from 'child_process'
 import { Agent as HttpsAgent } from 'https'
 import { Agent as HttpAgent } from 'http'
 import axios from 'axios'
@@ -34,6 +35,61 @@ async function getBrowser() {
   })
 
   return browser
+}
+
+/**
+ * Runs a shell snippet (same as `sh -c`). Only invoked when FLARESOLVERR_RECOVERY_SHELL is set.
+ * Do not expose untrusted input into that env var.
+ */
+function execShellCommand(
+  command: string,
+  timeoutMs: number
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'sh',
+      ['-c', command],
+      {
+        timeout: timeoutMs,
+        maxBuffer: 2 * 1024 * 1024,
+        windowsHide: true,
+      },
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve({ stdout: String(stdout), stderr: String(stderr) })
+        }
+      }
+    )
+  })
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Substrings (comma-separated, case-insensitive) that trigger recovery after sessions.create fails. */
+function flareRecoverySubstrings(): string[] {
+  const raw =
+    process.env.FLARESOLVERR_RECOVERY_SUBSTRINGS ||
+    'chromedriver,Input/output,Errno 5'
+  return raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function shouldRunFlareRecoveryOnMessage(message: string): boolean {
+  if (
+    String(process.env.FLARESOLVERR_RECOVERY_ON_ANY_ERROR || '')
+      .trim()
+      .toLowerCase() === 'true'
+  ) {
+    return true
+  }
+  const m = message.toLowerCase()
+  return flareRecoverySubstrings().some((sub) => m.includes(sub))
 }
 
 export interface FlareSolverrLoadPageOptions {
@@ -91,13 +147,89 @@ export const defaultLoadPageFlareSolverr = (
 
   let currentSessionId: string | null = null
   let sessionCreatePromise: Promise<string> | null = null
-  let requestsInCurrentSession = 0
+  type SessionState = {
+    completedRequests: number
+    inFlightRequests: number
+    recycleScheduled: boolean
+  }
+  const sessionStates = new Map<string, SessionState>()
   let idleDestroyTimer: NodeJS.Timeout | null = null
+  const recoveryShell = process.env.FLARESOLVERR_RECOVERY_SHELL?.trim() || ''
+  const recoveryShellTimeoutMs = Math.max(
+    5000,
+    Number(process.env.FLARESOLVERR_RECOVERY_SHELL_TIMEOUT_MS || 120000)
+  )
+  const recoveryWaitMs = Math.max(
+    0,
+    Number(process.env.FLARESOLVERR_RECOVERY_WAIT_MS || 5000)
+  )
+  let recoveryMutex: Promise<void> = Promise.resolve()
+
+  const withRecoveryLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+    let release!: () => void
+    const next = new Promise<void>((r) => {
+      release = r
+    })
+    const prev = recoveryMutex
+    recoveryMutex = next
+    await prev
+    try {
+      return await fn()
+    } finally {
+      release()
+    }
+  }
+
+  const runFlareRecoveryShell = async (reason: string): Promise<void> => {
+    if (!recoveryShell) return
+    await withRecoveryLock(async () => {
+      logSession(
+        `recovery: executing FLARESOLVERR_RECOVERY_SHELL (${reason.slice(0, 160)})`
+      )
+      try {
+        const { stdout, stderr } = await execShellCommand(
+          recoveryShell,
+          recoveryShellTimeoutMs
+        )
+        if (stdout.trim()) {
+          logSession(`recovery stdout: ${stdout.trim().slice(0, 500)}`)
+        }
+        if (stderr.trim()) {
+          logSession(`recovery stderr: ${stderr.trim().slice(0, 500)}`)
+        }
+        logSession('recovery: shell finished ok')
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        logSession(`recovery: shell failed ${msg}`)
+        throw e
+      }
+    })
+  }
 
   const clearIdleTimer = () => {
     if (!idleDestroyTimer) return
     clearTimeout(idleDestroyTimer)
     idleDestroyTimer = null
+  }
+
+  const getOrCreateSessionState = (sessionId: string): SessionState => {
+    const existing = sessionStates.get(sessionId)
+    if (existing) return existing
+    const created: SessionState = {
+      completedRequests: 0,
+      inFlightRequests: 0,
+      recycleScheduled: false,
+    }
+    sessionStates.set(sessionId, created)
+    return created
+  }
+
+  const tryDestroyRecycledSession = async (sessionId: string): Promise<void> => {
+    const state = sessionStates.get(sessionId)
+    if (!state) return
+    if (!state.recycleScheduled || state.inFlightRequests > 0) return
+    sessionStates.delete(sessionId)
+    await destroySession(sessionId)
   }
 
   const destroySession = async (sessionId: string | null): Promise<void> => {
@@ -126,11 +258,55 @@ export const defaultLoadPageFlareSolverr = (
     idleDestroyTimer = setTimeout(async () => {
       const sessionToDestroy = currentSessionId
       currentSessionId = null
-      requestsInCurrentSession = 0
+      if (sessionToDestroy) {
+        const state = getOrCreateSessionState(sessionToDestroy)
+        state.recycleScheduled = true
+      }
       logSession(`idle timeout reached session=${sessionToDestroy ?? 'none'}`)
-      await destroySession(sessionToDestroy)
+      if (sessionToDestroy) {
+        await tryDestroyRecycledSession(sessionToDestroy)
+      }
     }, destroySessionAfterIdleMs)
     idleDestroyTimer.unref?.()
+  }
+
+  const createSessionOnce = async (): Promise<string> => {
+    const { data } = await axios.post(
+      `${base}/v1`,
+      { cmd: 'sessions.create', session: `hltv_${Date.now()}` },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: maxTimeout,
+        validateStatus: () => true,
+      }
+    )
+
+    if (data?.status !== 'ok' || typeof data?.session !== 'string') {
+      const msg =
+        data?.message || data?.status || JSON.stringify(data).slice(0, 200)
+      throw new Error(`FlareSolverr session create failed: ${msg}`)
+    }
+    logSession(`create ok session=${data.session}`)
+    return data.session as string
+  }
+
+  const createSessionWithOptionalRecovery = async (): Promise<string> => {
+    try {
+      return await createSessionOnce()
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e)
+      if (
+        !recoveryShell ||
+        !shouldRunFlareRecoveryOnMessage(errMsg)
+      ) {
+        throw e
+      }
+      await runFlareRecoveryShell(errMsg)
+      if (recoveryWaitMs > 0) {
+        await sleepMs(recoveryWaitMs)
+      }
+      return await createSessionOnce()
+    }
   }
 
   const createSession = async (): Promise<string> => {
@@ -138,23 +314,7 @@ export const defaultLoadPageFlareSolverr = (
       return sessionCreatePromise
     }
     sessionCreatePromise = (async () => {
-      const { data } = await axios.post(
-        `${base}/v1`,
-        { cmd: 'sessions.create', session: `hltv_${Date.now()}` },
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: maxTimeout,
-          validateStatus: () => true,
-        }
-      )
-
-      if (data?.status !== 'ok' || typeof data?.session !== 'string') {
-        const msg =
-          data?.message || data?.status || JSON.stringify(data).slice(0, 200)
-        throw new Error(`FlareSolverr session create failed: ${msg}`)
-      }
-      logSession(`create ok session=${data.session}`)
-      return data.session as string
+      return await createSessionWithOptionalRecovery()
     })()
 
     try {
@@ -168,36 +328,62 @@ export const defaultLoadPageFlareSolverr = (
     if (!reuseSession) return null
     if (!currentSessionId) {
       currentSessionId = await createSession()
-      requestsInCurrentSession = 0
       logSession(`session attached session=${currentSessionId}`)
     }
     return currentSessionId
   }
 
-  const markRequestDone = async (sessionId: string | null): Promise<void> => {
+  const beginRequest = (sessionId: string | null): void => {
     if (!reuseSession || !sessionId) return
-    requestsInCurrentSession += 1
-    logSession(
-      `request done session=${sessionId} count=${requestsInCurrentSession}/${recycleSessionAfterRequests}`
-    )
-    if (requestsInCurrentSession >= recycleSessionAfterRequests) {
-      const previousSession = currentSessionId
-      currentSessionId = null
-      requestsInCurrentSession = 0
-      logSession(`recycle threshold reached session=${previousSession ?? 'none'}`)
-      await destroySession(previousSession)
+    const state = getOrCreateSessionState(sessionId)
+    state.inFlightRequests += 1
+  }
+
+  const markRequestDone = async (
+    sessionId: string | null,
+    succeeded: boolean
+  ): Promise<void> => {
+    if (!reuseSession || !sessionId) return
+    const state = getOrCreateSessionState(sessionId)
+    state.inFlightRequests = Math.max(0, state.inFlightRequests - 1)
+
+    if (succeeded) {
+      state.completedRequests += 1
+      logSession(
+        `request done session=${sessionId} count=${state.completedRequests}/${recycleSessionAfterRequests}`
+      )
+      if (
+        state.completedRequests >= recycleSessionAfterRequests &&
+        !state.recycleScheduled
+      ) {
+        state.recycleScheduled = true
+        if (currentSessionId === sessionId) {
+          currentSessionId = null
+        }
+        logSession(`recycle threshold reached session=${sessionId}`)
+      }
+    }
+
+    if (state.recycleScheduled) {
+      await tryDestroyRecycledSession(sessionId)
       return
     }
-    scheduleIdleDestroy()
+
+    if (currentSessionId === sessionId) {
+      scheduleIdleDestroy()
+    }
   }
 
   const resetCurrentSession = async (): Promise<void> => {
     const previousSession = currentSessionId
     currentSessionId = null
-    requestsInCurrentSession = 0
     clearIdleTimer()
     logSession(`session reset session=${previousSession ?? 'none'}`)
-    await destroySession(previousSession)
+    if (previousSession) {
+      const state = getOrCreateSessionState(previousSession)
+      state.recycleScheduled = true
+      await tryDestroyRecycledSession(previousSession)
+    }
   }
 
   let exitHookRegistered = false
@@ -207,9 +393,14 @@ export const defaultLoadPageFlareSolverr = (
     const cleanup = () => {
       const sessionToDestroy = currentSessionId
       currentSessionId = null
-      requestsInCurrentSession = 0
+      if (sessionToDestroy) {
+        const state = getOrCreateSessionState(sessionToDestroy)
+        state.recycleScheduled = true
+      }
       clearIdleTimer()
-      void destroySession(sessionToDestroy)
+      if (sessionToDestroy) {
+        void tryDestroyRecycledSession(sessionToDestroy)
+      }
     }
     process.once('beforeExit', cleanup)
     process.once('SIGINT', cleanup)
@@ -223,21 +414,27 @@ export const defaultLoadPageFlareSolverr = (
         await resetCurrentSession()
       }
       const session = await getSession()
-      const payload: Record<string, unknown> = { cmd: 'request.get', url, maxTimeout }
-      if (session) {
-        payload.session = session
-        payload.session_ttl_minutes = sessionTtlMinutes
-      }
-      const { data } = await axios.post(
-        `${base}/v1`,
-        payload,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: maxTimeout + 15000,
-          validateStatus: () => true,
+      beginRequest(session)
+      try {
+        const payload: Record<string, unknown> = { cmd: 'request.get', url, maxTimeout }
+        if (session) {
+          payload.session = session
+          payload.session_ttl_minutes = sessionTtlMinutes
         }
-      )
-      return { data, session }
+        const { data } = await axios.post(
+          `${base}/v1`,
+          payload,
+          {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: maxTimeout + 15000,
+            validateStatus: () => true,
+          }
+        )
+        return { data, session }
+      } catch (error) {
+        await markRequestDone(session, false)
+        throw error
+      }
     }
 
     let requestResult = await runRequest(false)
@@ -253,6 +450,7 @@ export const defaultLoadPageFlareSolverr = (
         logSession(
           `request failed due session state, forcing new session message=${message}`
         )
+        await markRequestDone(requestResult.session, false)
         requestResult = await runRequest(true)
         data = requestResult.data
       }
@@ -261,10 +459,11 @@ export const defaultLoadPageFlareSolverr = (
     if (data?.status !== 'ok' || typeof data?.solution?.response !== 'string') {
       const msg =
         data?.message || data?.status || JSON.stringify(data).slice(0, 200)
+      await markRequestDone(requestResult.session, false)
       throw new Error(`FlareSolverr: ${msg}`)
     }
 
-    await markRequestDone(requestResult.session)
+    await markRequestDone(requestResult.session, true)
     return data.solution.response as string
   }
 }
