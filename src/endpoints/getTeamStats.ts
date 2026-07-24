@@ -7,7 +7,13 @@ import { MatchType } from '../shared/MatchType'
 import { Player } from '../shared/Player'
 import { Event } from '../shared/Event'
 import { RankingFilter } from '../shared/RankingFilter'
-import { fetchPageFlareSolverr, getIdAt, parseNumber } from '../utils'
+import {
+  fetchPageFlareSolverr,
+  getIdAt,
+  parseHltvStatsDate,
+  parseNumber,
+  sleep,
+} from '../utils'
 import { MatchStatsPreview } from './getMatchesStats'
 
 export interface TeamMapStats {
@@ -126,8 +132,15 @@ export const getTeamStats =
       ? `https://www.hltv.org/stats/lineup/maps?${currentRosterQuery}&${query}`
       : `https://www.hltv.org/stats/teams/maps/${options.id}/${teamSlug}?${query}`
 
-    // Keep matches sequential for parser stability; load events/maps in parallel for speed.
-    const m$ = HLTVScraper(await fetchPageFlareSolverr(matchesUrl, loadStats))
+    const overview = mergeTeamOverviewFromStatsRows($, readLegacyLargeStrongOverview($))
+
+    // Matches page first (sequential); retry when FlareSolverr returns truncated HTML.
+    const m$ = await fetchTeamStatsMatchesPageWithRetry(
+      matchesUrl,
+      loadStats,
+      overview.mapsPlayed
+    )
+
     let e$: HLTVPage | null = null
     let mp$ = HLTVScraper(await fetchPageFlareSolverr(mapsUrl, loadStats))
     if (includeEvents) {
@@ -140,45 +153,7 @@ export const getTeamStats =
       mp$ = HLTVScraper(await fetchPageFlareSolverr(mapsUrl, loadStats))
     }
 
-    const overview = mergeTeamOverviewFromStatsRows($, readLegacyLargeStrongOverview($))
-
-    const matches = m$('.stats-table tbody tr')
-      .toArray()
-      .map((el) => {
-        const dateLink = el.find('.time a')
-        const fallbackDate = el.find('td').first().find('a')
-        const mapCell = el.find('.statsMapPlayed')
-        const fallbackMapCell = el.find('td').eq(4)
-        const opponentLink = el.find('img.flag').parent()
-        const fallbackOpponentLink = el.find('td').eq(3).find('a')
-        const mapHref =
-          dateLink.attr('href') || fallbackDate.attr('href') || ''
-        const statsDetailText = el.find('.statsDetail').text();
-        const [team1Result, team2Result] = statsDetailText ? statsDetailText.split(' - ').map(Number) : [0, 0];
-
-        return {
-          date: getTimestamp(dateLink.text() || fallbackDate.text()),
-          event: {
-            id: Number(
-              el
-                .find('.image-and-label')
-                .attr('href')!
-                ?.split('event=')[1]
-                ?.split('&')[0]
-            ),
-            name: el.find('.image-and-label img').attr('title')!
-          },
-          team1: currentTeam,
-          team2: {
-            id: (opponentLink.attrThen('href', getIdAt(3)) ??
-              fallbackOpponentLink.attrThen('href', getIdAt(3)))!,
-            name: opponentLink.trimText() || fallbackOpponentLink.trimText()!
-          },
-          map: fromMapName(mapCell.text() || fallbackMapCell.text()),
-          mapStatsId: getIdAt(4, mapHref)!,
-          result: { team1: Number(team1Result), team2: Number(team2Result) }
-        }
-      })
+    const matches = parseTeamStatsMatches(m$, currentTeam)
 
     const events = includeEvents && e$
       ? e$('.stats-table tbody tr')
@@ -351,10 +326,115 @@ function getPlayersByContainer(container: HLTVPageElement) {
     }))
 }
 
-function getTimestamp(source: string): number {
-  const [day, month, year] = source?.split('/') ?? [];
+const TEAM_STATS_MATCHES_RETRIES = Math.max(
+  1,
+  Number(process.env.HLTV_TEAM_STATS_MATCHES_RETRIES || 3)
+)
+const TEAM_STATS_MATCHES_RETRY_DELAY_MS = Math.max(
+  1000,
+  Number(process.env.HLTV_TEAM_STATS_RETRY_DELAY_MS || 5000)
+)
+const TEAM_STATS_MIN_MATCHES_RATIO = Math.min(
+  1,
+  Math.max(0.5, Number(process.env.HLTV_TEAM_STATS_MIN_MATCHES_RATIO || 0.85))
+)
 
-  return new Date([month, day, year].join('/')).getTime()
+function countTeamStatsMatchRows(m$: HLTVPage): number {
+  return m$('.stats-table tbody tr').length
+}
+
+/** Detect truncated matches HTML (common under FlareSolverr load during teams cron). */
+function shouldRetryTeamStatsMatchesFetch(
+  rowCount: number,
+  overviewMapsPlayed: number
+): boolean {
+  if (rowCount === 0) {
+    return true
+  }
+  if (
+    overviewMapsPlayed >= 40 &&
+    rowCount < overviewMapsPlayed * TEAM_STATS_MIN_MATCHES_RATIO
+  ) {
+    return true
+  }
+  // Overview and rows both tiny and equal — often partial page (~15–25 rows).
+  if (
+    rowCount <= 25 &&
+    overviewMapsPlayed > 0 &&
+    rowCount === overviewMapsPlayed
+  ) {
+    return true
+  }
+  return false
+}
+
+async function fetchTeamStatsMatchesPageWithRetry(
+  matchesUrl: string,
+  loadStats: (url: string) => Promise<string>,
+  overviewMapsPlayed: number
+): Promise<HLTVPage> {
+  let m$ = HLTVScraper(await fetchPageFlareSolverr(matchesUrl, loadStats))
+  let rowCount = countTeamStatsMatchRows(m$)
+
+  for (
+    let attempt = 1;
+    attempt < TEAM_STATS_MATCHES_RETRIES &&
+    shouldRetryTeamStatsMatchesFetch(rowCount, overviewMapsPlayed);
+    attempt += 1
+  ) {
+    console.warn(
+      `[getTeamStats] matches page truncated rows=${rowCount} overviewMaps=${overviewMapsPlayed}, retry ${attempt}/${TEAM_STATS_MATCHES_RETRIES - 1}`
+    )
+    await sleep(TEAM_STATS_MATCHES_RETRY_DELAY_MS)
+    m$ = HLTVScraper(await fetchPageFlareSolverr(matchesUrl, loadStats))
+    rowCount = countTeamStatsMatchRows(m$)
+  }
+
+  return m$
+}
+
+function parseTeamStatsMatches(
+  m$: HLTVPage,
+  currentTeam: { photo: string; id: number; name: string }
+): MatchStatsPreview[] {
+  return m$('.stats-table tbody tr')
+    .toArray()
+    .map((el) => {
+      const dateLink = el.find('.time a')
+      const fallbackDate = el.find('td').first().find('a')
+      const mapCell = el.find('.statsMapPlayed')
+      const fallbackMapCell = el.find('td').eq(4)
+      const opponentLink = el.find('img.flag').parent()
+      const fallbackOpponentLink = el.find('td').eq(3).find('a')
+      const mapHref = dateLink.attr('href') || fallbackDate.attr('href') || ''
+      const statsDetailText = el.find('.statsDetail').text()
+      const [team1Result, team2Result] = statsDetailText
+        ? statsDetailText.split(' - ').map(Number)
+        : [0, 0]
+
+      return {
+        date: parseHltvStatsDate(dateLink.text() || fallbackDate.text()),
+        event: {
+          id: Number(
+            el
+              .find('.image-and-label')
+              .attr('href')!
+              ?.split('event=')[1]
+              ?.split('&')[0]
+          ),
+          name: el.find('.image-and-label img').attr('title')!,
+        },
+        team1: currentTeam,
+        team2: {
+          id: (opponentLink.attrThen('href', getIdAt(3)) ??
+            fallbackOpponentLink.attrThen('href', getIdAt(3)))!,
+          name: opponentLink.trimText() || fallbackOpponentLink.trimText()!,
+        },
+        map: fromMapName(mapCell.text() || fallbackMapCell.text()),
+        mapStatsId: getIdAt(4, mapHref)!,
+        result: { team1: Number(team1Result), team2: Number(team2Result) },
+      }
+    })
 }
 
 function toTeamSlug(name: string): string {

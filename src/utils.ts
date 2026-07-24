@@ -29,6 +29,10 @@ class Semaphore {
       return Promise.resolve()
     }
 
+    console.warn(
+      `[playwright] waiting for browser slot (${this.max} sessions in use)...`
+    )
+
     return new Promise(resolve => {
       this.queue.push(resolve)
     })
@@ -46,7 +50,23 @@ class Semaphore {
 
 const playwrightSemaphore = new Semaphore(8)
 
-async function getBrowser() {
+/** Opens a Playwright page guarded by the shared HLTV browser semaphore. */
+export const acquirePlaywrightPage = async () => {
+  await playwrightSemaphore.acquire()
+
+  const browserInstance = await getBrowser()
+  const page = await browserInstance.newPage()
+
+  return {
+    page,
+    release: async () => {
+      await page.close().catch(() => {})
+      playwrightSemaphore.release()
+    },
+  }
+}
+
+export async function getBrowser() {
   if (browser && browser.isConnected()) {
     return browser
   }
@@ -218,6 +238,26 @@ export const parseNumber = (str: string | undefined): number | undefined => {
 
 export const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Parse HLTV stats table date (DD/MM/YY) as UTC midnight — date-only, no local TZ shift.
+ */
+export const parseHltvStatsDate = (source: string): number => {
+  const parts = source?.split('/') ?? []
+  if (parts.length < 3) {
+    return 0
+  }
+  const day = parseNumber(parts[0].trim()) ?? 0
+  const month = parseNumber(parts[1].trim()) ?? 0
+  let year = parseNumber(parts[2].trim()) ?? 0
+  if (year > 0 && year < 100) {
+    year += 2000
+  }
+  if (day <= 0 || month <= 0 || year <= 0) {
+    return 0
+  }
+  return Date.UTC(year, month - 1, day)
 }
 
 /** Context attached to scraper errors for logs (worker / monitoring). */

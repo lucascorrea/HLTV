@@ -92,10 +92,17 @@ function isLikelySvg(buffer: Buffer, url: string): boolean {
   return /<svg[\s>/]/i.test(head)
 }
 
-function isUsableLogo(logo: string | undefined | null): logo is string {
+/** Real CDN logo URL — skip HLTV placeholders and relative paths (axios needs absolute URL). */
+export function isUsableLogo(logo: string | undefined | null): logo is string {
   if (logo == null || logo === '') return false
-  const s = String(logo)
-  return !s.includes('placeholder.svg')
+  const s = String(logo).trim()
+  if (!s) return false
+  const lower = s.toLowerCase()
+  // Static placeholder or dynamic letter placeholder (e.g. /dynamic-svg/teamplaceholder?letter=B)
+  if (lower.includes('placeholder.svg') || lower.includes('teamplaceholder')) return false
+  if (lower.includes('/dynamic-svg/')) return false
+  if (!/^https?:\/\//i.test(s)) return false
+  return true
 }
 
 /**
@@ -246,7 +253,8 @@ async function writeLogoFile(
 }
 
 async function downloadLogoForTeam(opts: {
-  teamId: number
+  /** Optional when `preferredLogo` is already known (e.g. nations list without team id). */
+  teamId?: number | null
   teamName: string
   preferredLogo?: string | null
   rankingFallback?: string | null
@@ -262,9 +270,10 @@ async function downloadLogoForTeam(opts: {
     iosExistingKeys,
   } = opts
   const safeName = fileNameFromTeamName(teamName)
+  const idLabel = teamId != null && teamId !== 0 ? String(teamId) : 'no-id'
 
   if (!safeName) {
-    console.warn(`[skip] nome vazio após sanitizar: id=${teamId}`)
+    console.warn(`[skip] nome vazio após sanitizar: id=${idLabel}`)
     if (delayAfter) await delay(DELAY_MS_BETWEEN_TEAMS)
     return
   }
@@ -277,10 +286,18 @@ async function downloadLogoForTeam(opts: {
     return
   }
 
-  const logoUrl = await resolveLogoUrlWithPreferred(teamId, preferredLogo, rankingFallback)
+  // Prefer match-list / match-page logo; only hit getTeam when we have a real team id.
+  let logoUrl: string | null = null
+  if (isUsableLogo(preferredLogo)) {
+    logoUrl = String(preferredLogo)
+  } else if (teamId != null && teamId !== 0) {
+    logoUrl = await resolveLogoUrlWithPreferred(teamId, preferredLogo, rankingFallback)
+  } else if (isUsableLogo(rankingFallback)) {
+    logoUrl = String(rankingFallback)
+  }
 
   if (!logoUrl) {
-    console.warn(`[skip] sem logo resolvido: ${teamName} (id=${teamId})`)
+    console.warn(`[skip] sem logo resolvido: ${teamName} (id=${idLabel})`)
     if (delayAfter) await delay(DELAY_MS_BETWEEN_TEAMS)
     return
   }
@@ -302,7 +319,7 @@ async function downloadLogoForTeam(opts: {
     const dest = await writeLogoFile(buffer, logoUrl, safeName, outDir)
     console.log(`[ok] [${tag}] ${teamName} → ${path.relative(REPO_ROOT, dest)}`)
   } catch (err) {
-    console.error(`[erro] ${teamName} (${logoUrl}):`, err)
+    console.error(`[erro] ${teamName} id=${idLabel} (${logoUrl}):`, err)
   }
 
   if (delayAfter) await delay(DELAY_MS_BETWEEN_TEAMS)
@@ -378,28 +395,47 @@ async function runRanking(iosExistingKeys: Set<string>): Promise<void> {
  */
 async function runMatches(iosExistingKeys: Set<string>): Promise<void> {
   const matches = await HLTV.getMatches()
-  const seen = new Set<number>()
-  const queue: Array<{ id: number; name: string; preferredLogo?: string | null }> = []
+  const seenIds = new Set<number>()
+  const seenNames = new Set<string>()
+  const queue: Array<{ id?: number; name: string; preferredLogo?: string | null }> = []
 
   // Contadores para auditoria — ajudam a confirmar que nada escapou.
   let slotsTotal = 0          // total de slots team1+team2 inspecionados
   let slotsEmpty = 0          // team1/team2 inteiramente undefined (placeholders tipo "Semifinal 1")
-  let slotsTbd = 0            // time presente mas sem id (TBD/qualifier)
+  let slotsTbd = 0            // time presente mas sem id e sem logo usável (TBD/qualifier)
   let slotsNoName = 0         // id presente mas sem nome
   let slotsDuplicate = 0      // já está na fila (mesmo clube em vários jogos)
+  let slotsNoIdWithLogo = 0   // nations / HTML sem team id, mas com logo na lista
 
   for (const m of matches) {
     for (const t of [m.team1, m.team2]) {
       slotsTotal++
       if (!t) { slotsEmpty++; continue }
-      if (!t.id || t.id === 0) { slotsTbd++; continue }
       if (!t.name) { slotsNoName++; continue }
-      if (seen.has(t.id)) { slotsDuplicate++; continue }
-      seen.add(t.id)
+
+      const preferredLogo =
+        t.logo != null && t.logo !== '' && isUsableLogo(String(t.logo))
+          ? String(t.logo)
+          : undefined
+      const hasId = t.id != null && t.id !== 0
+
+      // Placeholder brackets ("Germany/France loser") often have no id and no logo — skip.
+      if (!hasId && !preferredLogo) { slotsTbd++; continue }
+
+      if (hasId) {
+        if (seenIds.has(t.id!)) { slotsDuplicate++; continue }
+        seenIds.add(t.id!)
+      } else {
+        const key = fileNameFromTeamName(t.name)
+        if (!key || seenNames.has(key)) { slotsDuplicate++; continue }
+        seenNames.add(key)
+        slotsNoIdWithLogo++
+      }
+
       queue.push({
-        id: t.id,
+        id: hasId ? t.id! : undefined,
         name: t.name,
-        preferredLogo: t.logo != null && t.logo !== '' ? String(t.logo) : undefined,
+        preferredLogo,
       })
     }
   }
@@ -407,7 +443,8 @@ async function runMatches(iosExistingKeys: Set<string>): Promise<void> {
   console.log(
     `[matches] ${matches.length} jogos • ${slotsTotal} slots • ` +
       `${queue.length} únicos para baixar | ` +
-      `ignorados: ${slotsEmpty} vazios + ${slotsTbd} TBD + ${slotsNoName} sem nome + ${slotsDuplicate} dups`
+      `ignorados: ${slotsEmpty} vazios + ${slotsTbd} TBD + ${slotsNoName} sem nome + ${slotsDuplicate} dups` +
+      (slotsNoIdWithLogo ? ` | sem-id-com-logo: ${slotsNoIdWithLogo}` : '')
   )
 
   for (let i = 0; i < queue.length; i++) {

@@ -1,4 +1,5 @@
 import { HLTV } from './index'
+import { runScorebotDemo } from './scorebot/runScorebotDemo'
 
 const log = (promise: Promise<any>) =>
   promise
@@ -18,11 +19,13 @@ const log = (promise: Promise<any>) =>
 // log(HLTV.getPlayerStats({ id: 11893 }))
 // log(HLTV.getRecentThreads())
 // log(HLTV.getStreams())
-log(HLTV.getTeam({ id: 13824 }))
+// log(HLTV.getTeam({ id: 13808 }))
 // log(HLTV.getTeamByName({ name: "Fu" }))
-// log(HLTV.getTeamStats({ id: 13824 }))
+// log(HLTV.getTeamStats({ id: 13841 }))
 // log(HLTV.getPastEvents({ startDate: '2019-3-1', endDate: '2019-3-29' }))
 // log(HLTV.getTeamRanking())
 // log(HLTV.getResults({ eventIds: [1617] }))
 // log(HLTV.getResults( { startDate: '2024-11-16', endDate: '2024-11-17' }))
 // log(HLTV.getNews())
+
+runScorebotDemo({ id: 2395007 })

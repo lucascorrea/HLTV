@@ -1,6 +1,6 @@
 import { stringify } from 'querystring'
 import { HLTVConfig } from '../config'
-import { HLTVScraper } from '../scraper'
+import { HLTVPageElement, HLTVScraper } from '../scraper'
 import { Team } from '../shared/Team'
 import { Event } from '../shared/Event'
 import { fetchPage, getIdAt } from '../utils'
@@ -33,6 +33,19 @@ export interface MatchPreview {
   title?: string
   live: boolean
   stars: number
+}
+
+/**
+ * HLTV puts `team1` / `team2` on `.match-wrapper` (child), not on the zone/container
+ * element that the list mapper iterates. Fall back to the element itself for older HTML.
+ */
+function teamIdFromListEl(el: HLTVPageElement, side: 1 | 2): number | undefined {
+  const attr = `team${side}`
+  return (
+    el.find('.match-wrapper').numFromAttr(attr) ??
+    el.numFromAttr(attr) ??
+    el.find(`[${attr}]`).first().numFromAttr(attr)
+  )
 }
 
 export const getMatches =
@@ -96,7 +109,7 @@ export const getMatches =
               name:
                 el.find('.match-teamname').first().text() ||
                 el.find('.team1 .team').text(),
-              id: el.numFromAttr('team1'),
+              id: teamIdFromListEl(el, 1),
               logo: logo1
             }
 
@@ -104,7 +117,7 @@ export const getMatches =
               name:
                 el.find('.match-teamname').eq(1).text() ||
                 el.find('.team2 .team').text(),
-              id: el.numFromAttr('team2'),
+              id: teamIdFromListEl(el, 2),
               logo: logo2
             }
           }
@@ -156,7 +169,7 @@ export const getMatches =
               name:
                 el.find('.match-teamname').first().text() ||
                 el.find('.team1 .team').text(),
-              id: el.numFromAttr('team1'),
+              id: teamIdFromListEl(el, 1),
               logo: logo1
             }
 
@@ -164,7 +177,7 @@ export const getMatches =
               name:
                 el.find('.match-teamname').eq(1).text() ||
                 el.find('.team2 .team').text(),
-              id: el.numFromAttr('team2'),
+              id: teamIdFromListEl(el, 2),
               logo: logo2
             }
           }
