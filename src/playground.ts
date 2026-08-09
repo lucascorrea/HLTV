@@ -28,4 +28,4 @@ const log = (promise: Promise<any>) =>
 // log(HLTV.getResults( { startDate: '2024-11-16', endDate: '2024-11-17' }))
 // log(HLTV.getNews())
 
-runScorebotDemo({ id: 2395007 })
+runScorebotDemo({ id: 2396013 })

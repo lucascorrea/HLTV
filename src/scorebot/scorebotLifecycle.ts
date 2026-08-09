@@ -28,14 +28,37 @@ export type ScorebotLifecycleEvent =
       frozen: boolean
     }
 
-/** MR12-style map win on current map score (simplified). */
+/**
+ * MR12 map finished on current round score?
+ * - Regulation: first to 13 before OT (13-0 … 13-11). At 12-12 → overtime.
+ * - Overtime: MR3 periods start at 12 / 15 / 18 / 21… After each 3-3 tie the
+ *   next period begins. A period ends only at periodStart+4 with win-by-2
+ *   (16-14, 19-17, 22-20…). Lead-of-1 mid period (16-15, 19-18, 21-19) must
+ *   NOT end the map — that falsely bumped LA series on 2395957 / 2396181 while
+ *   Ancient was still in OT.
+ *
+ * Real MR3 4-3 endings (16-15 / 19-18 / 22-21) resolve via page series /
+ * live=false / next-map rather than this scoreboard heuristic.
+ */
 export const isDecisiveMapRoundScore = (
   counterTerroristScore: number,
   terroristScore: number
 ): boolean => {
   const max = Math.max(counterTerroristScore, terroristScore)
   const min = Math.min(counterTerroristScore, terroristScore)
-  return max >= 13 && max - min >= 2
+
+  // Regulation: reached 13 while opponent never hit 12-12 (≤11).
+  if (max >= 13 && min < 12) {
+    return true
+  }
+
+  if (min < 12 || max === min) {
+    return false
+  }
+
+  // Current OT period start (12, 15, 18, 21…).
+  const periodStart = 12 + 3 * Math.floor((min - 12) / 3)
+  return max >= periodStart + 4 && max - min >= 2
 }
 
 const getRoundEnd = (log: LogUpdate['log'][number]): RoundEndPayload | null => {

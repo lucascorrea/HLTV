@@ -7,9 +7,29 @@ import { readMatchPageState, isMatchOverCountdown } from '../src/scorebot/matchP
 import { WinType } from '../src/endpoints/connectToScorebot'
 
 describe('scorebotLifecycle', () => {
-  it('detects decisive map score', () => {
+  it('detects decisive map score (MR12 regulation + MR3 OT)', () => {
+    // Regulation: first to 13 before OT (13-11 max opponent in reg)
     expect(isDecisiveMapRoundScore(13, 2)).toBe(true)
+    expect(isDecisiveMapRoundScore(13, 11)).toBe(true)
     expect(isDecisiveMapRoundScore(12, 12)).toBe(false)
+
+    // Early OT — still playing (must not start mapEndedWatch)
+    expect(isDecisiveMapRoundScore(13, 12)).toBe(false)
+    expect(isDecisiveMapRoundScore(14, 12)).toBe(false)
+    expect(isDecisiveMapRoundScore(14, 13)).toBe(false)
+    expect(isDecisiveMapRoundScore(15, 13)).toBe(false)
+    expect(isDecisiveMapRoundScore(15, 14)).toBe(false)
+    expect(isDecisiveMapRoundScore(15, 15)).toBe(false)
+
+    // OT finished — period start 12/15/18… need +4 and win-by-2
+    expect(isDecisiveMapRoundScore(16, 14)).toBe(true)
+    expect(isDecisiveMapRoundScore(16, 15)).toBe(false)
+    expect(isDecisiveMapRoundScore(17, 16)).toBe(false)
+    expect(isDecisiveMapRoundScore(19, 18)).toBe(false)
+    expect(isDecisiveMapRoundScore(19, 17)).toBe(true)
+    expect(isDecisiveMapRoundScore(18, 18)).toBe(false)
+    expect(isDecisiveMapRoundScore(21, 19)).toBe(false)
+    expect(isDecisiveMapRoundScore(22, 20)).toBe(true)
   })
 
   it('emits map_ended on decisive RoundEnd log', () => {

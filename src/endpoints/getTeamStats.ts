@@ -348,8 +348,9 @@ function shouldRetryTeamStatsMatchesFetch(
   rowCount: number,
   overviewMapsPlayed: number
 ): boolean {
+  // Empty career (new org / upcoming-only): 0 rows + 0 mapsPlayed is valid — do not retry.
   if (rowCount === 0) {
-    return true
+    return overviewMapsPlayed > 0
   }
   if (
     overviewMapsPlayed >= 40 &&

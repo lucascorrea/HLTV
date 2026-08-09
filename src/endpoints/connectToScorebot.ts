@@ -1,6 +1,6 @@
 import { generateRandomSuffix, acquirePlaywrightPage } from '../utils'
 import { HLTVConfig } from '../config'
-import type { Page, WebSocket } from 'playwright-core'
+import type { Page, Route, WebSocket } from 'playwright-core'
 import {
   parseScorebotFrame,
   scorebotPayloadToString,
@@ -256,7 +256,11 @@ type ConnectToScorebotParams = {
   onRawFrame?: (payload: string) => any
   ignorePingFrames?: boolean
   onConnect?: () => any
-  onDisconnect?: () => any
+  /**
+   * Fired when the scorebot session ends (idle socket, page close, match over, etc.).
+   * `info.reason` is our internal cause — Playwright WS close has no close code.
+   */
+  onDisconnect?: (info?: ScorebotDisconnectInfo) => any
   /** Optional status lines for demos (browser boot, stall reload, etc.). */
   onStatus?: (message: string) => void
   /**
@@ -275,6 +279,14 @@ const SCOREBOT_DISCONNECT_GRACE_MS = 5_000
 const SCOREBOT_STREAM_BOOTSTRAP_MS = 15_000
 const SCOREBOT_STREAM_BOOTSTRAP_MAX_ATTEMPTS = 20
 const SERIES_MAP_PAGE_SCRAPE_MS = 20_000
+
+/** Why connectToScorebot ended — passed to onDisconnect (no WS close codes from Playwright). */
+export type ScorebotDisconnectInfo = {
+  reason: string
+  openScorebotSockets: number
+  receivedStreamData: boolean
+  mapEndedWatchActive: boolean
+}
 
 const isScorebotSocket = (url: string) => url.includes(SCOREBOT_HOST)
 
@@ -493,6 +505,17 @@ const connectToScorebotWithPlaywright = async ({
   status('opening browser session...')
   const session = await acquirePlaywrightPage()
   const { page } = session
+
+  // Cut renderer CPU/RAM: keep document+script+WS; drop heavy static assets.
+  // Do not block stylesheet — DOM series / match_over parsers may rely on layout.
+  await page.route('**/*', (route: Route) => {
+    const type = route.request().resourceType()
+    if (type === 'image' || type === 'media' || type === 'font') {
+      return route.abort()
+    }
+    return route.continue()
+  })
+
   let closed = false
   let connected = false
   let socketReady = false
@@ -612,9 +635,23 @@ const connectToScorebotWithPlaywright = async ({
       return
     }
 
+    // HLTV drops scorebot between maps (bo3 map break). Keep the page alive
+    // while map-ended watch reloads/DOM-checks for Match over vs next map.
+    if (mapEndedWatchActive) {
+      status(
+        `scorebot idle after close during mapEndedWatch — stay alive openSockets=0`
+      )
+      return
+    }
+
     disconnectTimer = setTimeout(() => {
-      if (!closed && receivedStreamData && openScorebotSockets <= 0) {
-        closeSession()
+      if (
+        !closed &&
+        receivedStreamData &&
+        openScorebotSockets <= 0 &&
+        !mapEndedWatchActive
+      ) {
+        closeSession('idle_after_socket_close')
       }
     }, SCOREBOT_DISCONNECT_GRACE_MS)
   }
@@ -692,9 +729,15 @@ const connectToScorebotWithPlaywright = async ({
   }
 
   const stopMapEndedWatch = () => {
+    const wasActive = mapEndedWatchActive
     mapEndedWatchActive = false
     mapEndedVerifyAttempts = 0
     clearMapEndedCheckTimer()
+    // Watch ended without match_over (series continues) — if scorebot never
+    // came back, fall through to the normal idle close / outer retry path.
+    if (wasActive && !closed && !matchEndedEmitted) {
+      scheduleDisconnectIfIdle()
+    }
   }
 
   const inspectMatchOverFromPage = async (
@@ -720,17 +763,18 @@ const connectToScorebotWithPlaywright = async ({
   const handleMatchPageStateAfterMapEnded = (state: MatchPageState) => {
     if (state.kind === 'match_over') {
       stopMapEndedWatch()
+      // Close first so done() from emit callbacks is a no-op with correct reason.
+      closeSession('match_over')
       void emitMatchEnded(state)
-      closeSession()
       return
     }
 
     if (state.kind === 'postponed') {
       stopMapEndedWatch()
+      closeSession('postponed')
       if (onMatchPageState) {
         onMatchPageState(state, done)
       }
-      closeSession()
     }
   }
 
@@ -740,15 +784,18 @@ const connectToScorebotWithPlaywright = async ({
     }
 
     try {
-      const state = await inspectMatchOverFromPage(mapEndedWatchActive)
+      // Never reload here while mapEndedWatch is active — that path already
+      // reloads on its own timer. Double reload was killing the scorebot WS
+      // about every ~10–15s during OT false positives.
+      const state = await inspectMatchOverFromPage(false)
       if (!state) {
         return
       }
 
       if (state.kind === 'match_over') {
         stopMapEndedWatch()
+        closeSession('match_over')
         void emitMatchEnded(state)
-        closeSession()
       }
     } catch {
       // Page may be navigating; ignore transient read errors.
@@ -770,26 +817,40 @@ const connectToScorebotWithPlaywright = async ({
     }
   }
 
-  const closeSession = () => {
+  const closeSession = (reason = 'unknown') => {
     if (closed) {
       return
     }
 
+    // Capture before stopMapEndedWatch clears the flag (disconnect logs need it).
+    const wasMapEndedWatchActive = mapEndedWatchActive
     closed = true
     clearDisconnectTimer()
     clearStreamBootstrapTimer()
-    stopMapEndedWatch()
+    mapEndedWatchActive = false
+    mapEndedVerifyAttempts = 0
+    clearMapEndedCheckTimer()
     if (matchOverPoll) {
       clearInterval(matchOverPoll)
       matchOverPoll = null
     }
+    status(
+      `session closing reason=${reason} openSockets=${openScorebotSockets} ` +
+        `hadStream=${receivedStreamData} mapEndedWatch=${wasMapEndedWatchActive}`
+    )
     if (onDisconnect) {
-      onDisconnect()
+      onDisconnect({
+        reason,
+        openScorebotSockets,
+        receivedStreamData,
+        mapEndedWatchActive: wasMapEndedWatchActive,
+      })
     }
     void session.release()
   }
 
-  const done = closeSession
+  // Consumer-facing done() — intentional end from settle / caller.
+  const done = () => closeSession('done')
 
   const verifyMatchOverAfterMapEnded = async () => {
     if (closed || matchEndedEmitted || page.isClosed() || !mapEndedWatchActive) {
@@ -847,6 +908,8 @@ const connectToScorebotWithPlaywright = async ({
     }
 
     mapEndedWatchActive = true
+    // Cancel idle teardown — map-break socket drops are expected.
+    clearDisconnectTimer()
     scheduleMatchOverCheckAfterMapEnded()
   }
 
@@ -874,7 +937,27 @@ const connectToScorebotWithPlaywright = async ({
       if (isZombieForfeitScoreboard(board)) {
         startMapEndedWatch()
       }
-      void refreshPageSeriesMapWins()
+      // Count series map win from decisive scoreboard (RoundEnd may be missing).
+      // Must run before onScoreboardUpdate so getDisplay() includes the new win.
+      if (seriesMapsTracker?.noteDecisiveScoreboard(board)) {
+        startMapEndedWatch()
+        void refreshPageSeriesMapWins(true)
+      } else {
+        // Live non-decisive board (incl. OT 14-13 / 15-13 / 18-18) — stop
+        // match-over reloads and undo false OT map-end series bumps.
+        if (
+          mapEndedWatchActive &&
+          board.live !== false &&
+          !isDecisiveMapRoundScore(
+            board.counterTerroristScore,
+            board.terroristScore
+          )
+        ) {
+          stopMapEndedWatch()
+        }
+        seriesMapsTracker?.retractIfMapStillLive(board)
+        void refreshPageSeriesMapWins()
+      }
       if (onScoreboardUpdate) {
         const { key, changed } = scoreboardSnapshotChanged(
           lastEmittedScoreboardKey,
@@ -898,6 +981,13 @@ const connectToScorebotWithPlaywright = async ({
         noteDecisiveMapEndFromLog(logUpdate)
         void refreshPageSeriesMapWins(true)
         startMapEndedWatch()
+        // Re-emit last scoreboard so consumers see series wins immediately
+        // (otherwise series only appears on the next map's first tick).
+        if (lastScoreboard && onScoreboardUpdate) {
+          const { key } = scoreboardSnapshotChanged('', lastScoreboard)
+          lastEmittedScoreboardKey = key
+          onScoreboardUpdate(lastScoreboard, done)
+        }
       }
       if (onLogUpdate) {
         onLogUpdate(logUpdate, done)
@@ -941,7 +1031,7 @@ const connectToScorebotWithPlaywright = async ({
     scheduleStreamBootstrap()
   }
 
-  page.on('close', closeSession)
+  page.on('close', () => closeSession('page_closed'))
 
   page.on('websocket', (websocket: WebSocket) => {
     if (!isScorebotSocket(websocket.url())) {
@@ -950,6 +1040,7 @@ const connectToScorebotWithPlaywright = async ({
 
     openScorebotSockets += 1
     clearDisconnectTimer()
+    status(`scorebot websocket open openSockets=${openScorebotSockets}`)
 
     if (socketReady && !receivedStreamData) {
       scheduleStreamBootstrap()
@@ -984,8 +1075,13 @@ const connectToScorebotWithPlaywright = async ({
       }
     })
 
+    // Playwright does not expose WS close code/reason — only that the socket died.
     websocket.on('close', () => {
       openScorebotSockets = Math.max(0, openScorebotSockets - 1)
+      status(
+        `scorebot websocket closed openSockets=${openScorebotSockets} ` +
+          `hadStream=${receivedStreamData} mapEndedWatch=${mapEndedWatchActive}`
+      )
 
       if (!socketReady || closed || !receivedStreamData) {
         return
@@ -1017,7 +1113,7 @@ const connectToScorebotWithPlaywright = async ({
           onMatchPageState(matchPageState, done)
         }
 
-        closeSession()
+        closeSession(matchPageState.kind)
         return
       }
 
@@ -1026,7 +1122,7 @@ const connectToScorebotWithPlaywright = async ({
           onMatchPageState(matchPageState, done)
         }
 
-        closeSession()
+        closeSession(`not_live:${matchPageState.kind}`)
         return
       }
 
@@ -1043,7 +1139,11 @@ const connectToScorebotWithPlaywright = async ({
       })
 
       if (matchPageState.kind !== 'live_scorebot') {
-        closeSession()
+        closeSession(
+          matchPageState.kind === 'wait_timeout'
+            ? 'wait_timeout'
+            : `not_live:${matchPageState.kind}`
+        )
         return
       }
     }
@@ -1056,7 +1156,7 @@ const connectToScorebotWithPlaywright = async ({
 
     await page.waitForTimeout(1500)
   } catch (error) {
-    closeSession()
+    closeSession('goto_or_setup_error')
     throw error
   }
 }

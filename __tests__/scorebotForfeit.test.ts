@@ -58,17 +58,44 @@ describe('scorebotForfeit', () => {
     ).toBe(true)
   })
 
-  it('reads match_over when Default map row has a score on page', () => {
+  // Match 2395941: map1 Default WO + map2 live — Default row must not end series.
+  it('keeps live_scorebot when Default WO row exists but scorebot is live', () => {
     expect(
       readMatchPageState({
         hasScoreboardElement: true,
         scorebotUrl: 'https://scorebot-lb.hltv.org',
-        scorebotId: '2394756',
+        scorebotId: '2395941',
         countdown: 'LIVE',
         isCountdownLive: true,
         hasDefaultForfeitMapResult: true,
       }).kind
+    ).toBe('live_scorebot')
+  })
+
+  it('reads match_over for full-series Default forfeit without live scorebot', () => {
+    expect(
+      readMatchPageState({
+        hasScoreboardElement: false,
+        scorebotUrl: null,
+        scorebotId: null,
+        countdown: null,
+        isCountdownLive: false,
+        hasDefaultForfeitMapResult: true,
+      }).kind
     ).toBe('match_over')
+  })
+
+  it('does not treat Default WO + LIVE countdown as match_over without scorebot', () => {
+    expect(
+      readMatchPageState({
+        hasScoreboardElement: false,
+        scorebotUrl: null,
+        scorebotId: null,
+        countdown: 'LIVE',
+        isCountdownLive: true,
+        hasDefaultForfeitMapResult: true,
+      }).kind
+    ).toBe('scheduled')
   })
 
   it('does not treat boards with real rosters as forfeit', () => {

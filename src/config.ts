@@ -2,40 +2,7 @@ import { execFile } from 'child_process'
 import { Agent as HttpsAgent } from 'https'
 import { Agent as HttpAgent } from 'http'
 import axios from 'axios'
-import { chromium } from 'playwright-extra'
-import stealth from 'puppeteer-extra-plugin-stealth'
-
-// Configure playwright with stealth plugin
-chromium.use(stealth())
-
-let browser: any = null
-
-async function getBrowser() {
-  if (browser && browser.isConnected()) {
-    return browser
-  }
-
-  browser = await chromium.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--window-size=1280x720',
-      '--disable-extensions',
-      '--no-first-run',
-      '--disable-blink-features=AutomationControlled',
-    ],
-    timeout: 30000
-  })
-
-  browser.on('disconnected', () => {
-    browser = null
-  })
-
-  return browser
-}
+import { getBrowser } from './utils'
 
 /**
  * Runs a shell snippet (same as `sh -c`). Only invoked when FLARESOLVERR_RECOVERY_SHELL is set.
@@ -134,6 +101,12 @@ export const defaultLoadPageFlareSolverr = (
     options.destroySessionAfterIdleMs ??
       Number(process.env.FLARESOLVERR_DESTROY_IDLE_MS || 120000)
   )
+  // Age after which an `hltv_*` session is assumed abandoned by a dead process.
+  const staleSessionMs = Math.max(
+    destroySessionAfterIdleMs * 2,
+    Number(process.env.FLARESOLVERR_STALE_SESSION_MS || 3_600_000)
+  )
+  const staleSweepIntervalMs = Math.max(60_000, Math.floor(staleSessionMs / 4))
   // Logs de sessão ativos por padrão; pode desativar com FLARESOLVERR_SESSION_LOGS=false.
   const sessionLogsEnabled =
     String(process.env.FLARESOLVERR_SESSION_LOGS || 'true')
@@ -154,6 +127,7 @@ export const defaultLoadPageFlareSolverr = (
   }
   const sessionStates = new Map<string, SessionState>()
   let idleDestroyTimer: NodeJS.Timeout | null = null
+  let staleSweepTimer: NodeJS.Timeout | null = null
   const recoveryShell = process.env.FLARESOLVERR_RECOVERY_SHELL?.trim() || ''
   const recoveryShellTimeoutMs = Math.max(
     5000,
@@ -252,6 +226,58 @@ export const defaultLoadPageFlareSolverr = (
     }
   }
 
+  /**
+   * Destroy `hltv_*` sessions abandoned by processes that died before cleaning
+   * up. Every orphan keeps a Chromium alive inside the FlareSolverr container,
+   * so the leak shows up as container memory that never comes back.
+   *
+   * Ownership cannot be known across processes, so age is the only safe signal:
+   * the session id carries its creation timestamp, and a session in real use is
+   * recycled by idle/request limits long before `staleSessionMs`. If a sweep
+   * ever hits a live session, the owner just recreates one on the next request.
+   */
+  const reapStaleSessions = async (): Promise<void> => {
+    try {
+      const { data } = await axios.post(
+        `${base}/v1`,
+        { cmd: 'sessions.list' },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: maxTimeout,
+          validateStatus: () => true,
+        }
+      )
+      const sessions: string[] = Array.isArray(data?.sessions)
+        ? data.sessions
+        : []
+      const cutoff = Date.now() - staleSessionMs
+      for (const sessionId of sessions) {
+        if (sessionId === currentSessionId) continue
+        if ((sessionStates.get(sessionId)?.inFlightRequests ?? 0) > 0) continue
+        const createdAt = Number(/^hltv_(\d+)$/.exec(sessionId)?.[1])
+        if (!Number.isFinite(createdAt) || createdAt > cutoff) continue
+        // Always logged: this is the leak signal, not per-request session noise.
+        console.log(
+          `[FlareSolverrSession] reaping stale session=${sessionId} ` +
+            `age=${Math.round((Date.now() - createdAt) / 60000)}min`
+        )
+        sessionStates.delete(sessionId)
+        await destroySession(sessionId)
+      }
+    } catch {
+      // Opportunistic sweep: a failed list must never break a page fetch.
+    }
+  }
+
+  const ensureStaleSweep = () => {
+    if (!reuseSession || staleSweepTimer) return
+    void reapStaleSessions()
+    staleSweepTimer = setInterval(() => {
+      void reapStaleSessions()
+    }, staleSweepIntervalMs)
+    staleSweepTimer.unref?.()
+  }
+
   const scheduleIdleDestroy = () => {
     if (!reuseSession) return
     clearIdleTimer()
@@ -326,6 +352,7 @@ export const defaultLoadPageFlareSolverr = (
 
   const getSession = async (): Promise<string | null> => {
     if (!reuseSession) return null
+    ensureStaleSweep()
     if (!currentSessionId) {
       currentSessionId = await createSession()
       logSession(`session attached session=${currentSessionId}`)

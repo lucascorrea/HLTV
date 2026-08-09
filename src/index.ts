@@ -106,6 +106,11 @@ export type { MatchPreview, GetMatchesArguments } from './endpoints/getMatches'
 
 export { WinType } from './endpoints/connectToScorebot'
 export type { ScoreboardUpdate, LogUpdate } from './endpoints/connectToScorebot'
+export {
+  ScorebotSeriesMapsTracker,
+  formatFinalSeriesLine
+} from './scorebot/scorebotSeriesMaps'
+export type { MapsScoreDisplay } from './scorebot/scorebotSeriesMaps'
 
 export type {
   FullEvent,

@@ -34,20 +34,29 @@ export const readMatchPageState = (args: MatchPageDomSnapshot): MatchPageState =
     return { kind: 'match_over' }
   }
 
-  if (args.hasDefaultForfeitMapResult) {
-    return { kind: 'match_over' }
-  }
-
   if (countdown === 'Match postponed') {
     return { kind: 'postponed' }
   }
 
+  // Live scorebot wins over a Default (walkover) map row. Map1 WO in a BO3
+  // still shows default 1-0 while map2 is played (match 2395941) — that must
+  // NOT be treated as series over.
   if (args.hasScoreboardElement && args.scorebotUrl && args.scorebotId) {
     return {
       kind: 'live_scorebot',
       scorebotUrl: args.scorebotUrl,
       scorebotId: args.scorebotId,
     }
+  }
+
+  // Full-series forfeit: Default map scored and no live scorebot / LIVE
+  // countdown. Do not use Default alone while countdown is LIVE.
+  if (
+    args.hasDefaultForfeitMapResult &&
+    !args.isCountdownLive &&
+    !countdown
+  ) {
+    return { kind: 'match_over' }
   }
 
   if (args.isCountdownLive) {

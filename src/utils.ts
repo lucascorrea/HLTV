@@ -1,3 +1,5 @@
+// Keep first: strips a bogus PLAYWRIGHT_BROWSERS_PATH before playwright-core reads it.
+import './playwrightEnv'
 import * as cheerio from 'cheerio'
 import { randomUUID } from 'crypto'
 import { chromium } from 'playwright-extra'

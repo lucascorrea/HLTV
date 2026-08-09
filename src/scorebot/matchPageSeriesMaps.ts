@@ -56,9 +56,17 @@ export const readSeriesMapWinsFromMatchPage = async (
       }
 
       const isTeam1Winner =
-        (left >= 13 && left >= right + 2) || (left > right && left >= 16)
+        left > right &&
+        ((left >= 13 && right < 12) ||
+          (right >= 12 &&
+            left >= 12 + 3 * Math.floor((right - 12) / 3) + 4 &&
+            left - right >= 2))
       const isTeam2Winner =
-        (right >= 13 && right >= left + 2) || (right > left && right >= 16)
+        right > left &&
+        ((right >= 13 && left < 12) ||
+          (left >= 12 &&
+            right >= 12 + 3 * Math.floor((left - 12) / 3) + 4 &&
+            right - left >= 2))
 
       if (isTeam1Winner) {
         team1Win += 1
