@@ -160,6 +160,9 @@ export const getMatch =
       step = 'HLTVScraper'
       $ = HLTVScraper(root)
 
+      step = 'assertPageMatchId'
+      assertFetchedPageMatchesId($, id, root.html?.() ?? '')
+
       step = 'parse:metadata,teams,vetoes,event'
       const title = $('.timeAndEvent .text').trimText()
       const date = $('.timeAndEvent .date').numFromAttr('data-unix')
@@ -237,6 +240,58 @@ export const getMatch =
       })
     }
   }
+
+/**
+ * Reject HTML that belongs to a different match id (FlareSolverr/Playwright
+ * cross-talk stamped the requested id onto another page's teams).
+ */
+function extractMatchIdFromPageHtml($: HLTVPage, html: string): number | undefined {
+  const candidates: Array<string | undefined> = []
+  try {
+    candidates.push($('link[rel="canonical"]').attr('href'))
+  } catch {
+    /* ignore */
+  }
+  try {
+    candidates.push($('meta[property="og:url"]').attr('content'))
+  } catch {
+    /* ignore */
+  }
+  try {
+    candidates.push($('meta[property="og:url"]').attr('value'))
+  } catch {
+    /* ignore */
+  }
+
+  for (const raw of candidates) {
+    if (!raw) continue
+    const m = String(raw).match(/\/matches\/(\d+)/)
+    if (m) return parseNumber(m[1])
+  }
+
+  // Do not scan the full HTML for /matches/<id>/ — related-match cards can
+  // appear before the page's own URL and cause false mismatches.
+  return undefined
+}
+
+function assertFetchedPageMatchesId(
+  $: HLTVPage,
+  requestedId: number,
+  html: string
+): void {
+  const pageId = extractMatchIdFromPageHtml($, html)
+  if (pageId == null) {
+    // Challenge pages / truncated HTML — let later parsers fail with better context.
+    return
+  }
+  // Callers sometimes pass string ids from Bull jobs — coerce before compare.
+  const requested = Number(requestedId)
+  if (!Number.isFinite(requested) || pageId !== requested) {
+    throw new Error(
+      `getMatch page/id mismatch requested=${requestedId} page=${pageId}`
+    )
+  }
+}
 
 function getMatchStatus($: HLTVPage): MatchStatus {
   let status = MatchStatus.Scheduled

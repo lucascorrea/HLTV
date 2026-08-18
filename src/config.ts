@@ -139,6 +139,53 @@ export const defaultLoadPageFlareSolverr = (
   )
   let recoveryMutex: Promise<void> = Promise.resolve()
 
+  /** Serialize request.get on the shared FlareSolverr session — concurrent
+   * navigations on one Chromium session can return another URL's HTML
+   * (CSLiveStats: NRG/Phantom bleed across EWC qualifier match ids).
+   * Wait cap: under match storms, queueing forever blocks scorebot start
+   * (2396546 stuck behind FlareSolverr while live scores freeze). */
+  let sessionRequestMutex: Promise<void> = Promise.resolve()
+  const sessionLockMaxWaitMs = Math.max(
+    5_000,
+    Number(process.env.FLARESOLVERR_SESSION_LOCK_MAX_WAIT_MS || 15_000)
+  )
+
+  const withSessionRequestLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const prev = sessionRequestMutex
+    sessionRequestMutex = gate
+
+    try {
+      await Promise.race([
+        prev,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `FlareSolverr session lock wait exceeded ${sessionLockMaxWaitMs}ms`
+                )
+              ),
+            sessionLockMaxWaitMs
+          )
+        ),
+      ])
+    } catch (err) {
+      // Timed out waiting — keep chain order: release only after prev settles.
+      void prev.finally(() => release())
+      throw err
+    }
+
+    try {
+      return await fn()
+    } finally {
+      release()
+    }
+  }
+
   const withRecoveryLock = async <T>(fn: () => Promise<T>): Promise<T> => {
     let release!: () => void
     const next = new Promise<void>((r) => {
@@ -435,11 +482,84 @@ export const defaultLoadPageFlareSolverr = (
   }
   registerExitHook()
 
+  const isRecoverableFlareSessionError = (message: string): boolean => {
+    const m = message.toLowerCase()
+    return (
+      m.includes('session') ||
+      m.includes('invalid') ||
+      m.includes('tab crashed') ||
+      m.includes('chrome') ||
+      m.includes('target closed') ||
+      m.includes('browser has disconnected') ||
+      m.includes('timeout') ||
+      // Challenge solver died mid-flight — usually a dead/overloaded Chromium tab.
+      (m.includes('challenge') && m.includes('crash'))
+    )
+  }
+
+  /**
+   * Hard cap on orphan Chromium tabs inside FlareSolverr. Each worker process
+   * should own ~1 live session; leftover hltv_* from restarts/OOM storms are
+   * what push the container into `tab crashed`.
+   */
+  const reapExcessSessions = async (keepSessionId: string | null): Promise<void> => {
+    const maxSessions = Math.max(
+      1,
+      Number(process.env.FLARESOLVERR_MAX_SESSIONS || 3)
+    )
+    try {
+      const { data } = await axios.post(
+        `${base}/v1`,
+        { cmd: 'sessions.list' },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: Math.min(maxTimeout, 15_000),
+          validateStatus: () => true,
+        }
+      )
+      const sessions: string[] = Array.isArray(data?.sessions)
+        ? data.sessions.filter((s: unknown) => typeof s === 'string')
+        : []
+      const owned = sessions.filter((s) => s.startsWith('hltv_'))
+      if (owned.length <= maxSessions) return
+
+      const sortable = owned
+        .map((sessionId) => ({
+          sessionId,
+          createdAt: Number(/^hltv_(\d+)$/.exec(sessionId)?.[1]) || 0,
+        }))
+        .sort((a, b) => a.createdAt - b.createdAt)
+
+      // Keep newest sessions (and the one we are about to use); destroy oldest extras.
+      const keep = new Set<string>()
+      if (keepSessionId) keep.add(keepSessionId)
+      for (let i = sortable.length - 1; i >= 0 && keep.size < maxSessions; i--) {
+        keep.add(sortable[i].sessionId)
+      }
+
+      for (const { sessionId } of sortable) {
+        if (keep.has(sessionId)) continue
+        if (sessionId === currentSessionId) continue
+        if ((sessionStates.get(sessionId)?.inFlightRequests ?? 0) > 0) continue
+        console.log(
+          `[FlareSolverrSession] reaping excess session=${sessionId} ` +
+            `count=${owned.length}>max=${maxSessions}`
+        )
+        sessionStates.delete(sessionId)
+        await destroySession(sessionId)
+      }
+    } catch {
+      // Best-effort; never block the page fetch on list failures.
+    }
+  }
+
   return async (url: string) => {
+    return withSessionRequestLock(async () => {
     const runRequest = async (forceNewSession: boolean) => {
       if (forceNewSession) {
         await resetCurrentSession()
       }
+      await reapExcessSessions(currentSessionId)
       const session = await getSession()
       beginRequest(session)
       try {
@@ -469,13 +589,9 @@ export const defaultLoadPageFlareSolverr = (
 
     if (data?.status !== 'ok' || typeof data?.solution?.response !== 'string') {
       const message = String(data?.message || '')
-      if (
-        reuseSession &&
-        (message.toLowerCase().includes('session') ||
-          message.toLowerCase().includes('invalid'))
-      ) {
+      if (reuseSession && isRecoverableFlareSessionError(message)) {
         logSession(
-          `request failed due session state, forcing new session message=${message}`
+          `request failed due session/tab state, forcing new session message=${message}`
         )
         await markRequestDone(requestResult.session, false)
         requestResult = await runRequest(true)
@@ -492,6 +608,7 @@ export const defaultLoadPageFlareSolverr = (
 
     await markRequestDone(requestResult.session, true)
     return data.solution.response as string
+    })
   }
 }
 
