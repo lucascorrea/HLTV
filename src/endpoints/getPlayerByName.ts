@@ -1,12 +1,11 @@
 import { HLTVConfig } from '../config'
 import { FullPlayer, getPlayer } from './getPlayer'
+import { fetchHltvSearch } from './fetchHltvSearch'
 
 export const getPlayerByName =
   (config: HLTVConfig) =>
   async ({ name }: { name: string }): Promise<FullPlayer> => {
-    const pageContent = JSON.parse(
-      await config.loadPage!(`https://www.hltv.org/search?term=${name}`)
-    )
+    const pageContent = await fetchHltvSearch(config, name)
     const firstResult = pageContent[0].players[0]
 
     if (!firstResult) {

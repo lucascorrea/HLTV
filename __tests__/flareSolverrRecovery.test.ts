@@ -17,6 +17,7 @@ describe('FlareSolverr recovery shell', () => {
   const prevShell = process.env.FLARESOLVERR_RECOVERY_SHELL
   const prevWait = process.env.FLARESOLVERR_RECOVERY_WAIT_MS
   const prevSessionLogs = process.env.FLARESOLVERR_SESSION_LOGS
+  const prevShared = process.env.FLARESOLVERR_SHARED_SESSION
 
   beforeEach(() => {
     markerPath = path.join(
@@ -29,6 +30,7 @@ describe('FlareSolverr recovery shell', () => {
     process.env.FLARESOLVERR_RECOVERY_SHELL = `printf recovered > "${markerPath}"`
     process.env.FLARESOLVERR_RECOVERY_WAIT_MS = '0'
     process.env.FLARESOLVERR_SESSION_LOGS = 'false'
+    process.env.FLARESOLVERR_SHARED_SESSION = 'false'
     mockPost.mockReset()
   })
 
@@ -50,6 +52,11 @@ describe('FlareSolverr recovery shell', () => {
       delete process.env.FLARESOLVERR_SESSION_LOGS
     } else {
       process.env.FLARESOLVERR_SESSION_LOGS = prevSessionLogs
+    }
+    if (prevShared === undefined) {
+      delete process.env.FLARESOLVERR_SHARED_SESSION
+    } else {
+      process.env.FLARESOLVERR_SHARED_SESSION = prevShared
     }
   })
 

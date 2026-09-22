@@ -1,6 +1,12 @@
-import { generateRandomSuffix, acquirePlaywrightPage } from '../utils'
+import { generateRandomSuffix, acquirePlaywrightPage, assertHltvHtml } from '../utils'
 import { HLTVConfig } from '../config'
 import type { Page, Route, WebSocket } from 'playwright-core'
+import type { FlarePageMeta } from '../flarePage'
+import {
+  readMatchPageStateFromHtml,
+  readSeriesMapWinsFromHtml
+} from '../scorebot/matchPageHtml'
+import { openScorebotSocket, type OpenScorebotSocketHandle } from '../scorebot/openScorebotSocket'
 import {
   parseScorebotFrame,
   scorebotPayloadToString,
@@ -310,6 +316,30 @@ const parseSocketEventData = (name: string, data: unknown): unknown => {
 
 const isPingFrame = isSocketTransportFrame
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const fetchFlareMatchPage = async (
+  config: HLTVConfig,
+  matchId: number
+): Promise<(FlarePageMeta & { state: MatchPageState }) | null> => {
+  const loader = config.loadPageFlareSolverr
+  if (typeof loader?.withMeta !== 'function') {
+    return null
+  }
+
+  const url = `https://www.hltv.org/matches/${matchId}/x`
+  const meta = await loader.withMeta(url)
+  assertHltvHtml(meta.html, url)
+  if (!meta.cookies?.length || !meta.userAgent) {
+    return null
+  }
+
+  return {
+    ...meta,
+    state: readMatchPageStateFromHtml(meta.html)
+  }
+}
+
 const DEFAULT_WAIT_FOR_SCOREBOT: Required<WaitForScorebotOptions> = {
   timeoutMs: 3 * 60 * 60 * 1000,
   pollIntervalMs: 15_000,
@@ -444,44 +474,16 @@ type BufferedScorebotEvent = {
 }
 
 export const connectToScorebot =
-  (_config: HLTVConfig) =>
-  ({
-    id,
-    waitForScorebot,
-    onScoreboardUpdate,
-    onLogUpdate,
-    onFullLogUpdate,
-    onSocketEvent,
-    onMatchPageState,
-    onRawFrame,
-    ignorePingFrames = true,
-    onConnect,
-    onDisconnect,
-    dedupeScoreboardUpdates = true,
-    onStatus,
-    seriesMapsTracker,
-    onMatchSeriesFinal
-  }: ConnectToScorebotParams) => {
+  (config: HLTVConfig) =>
+  (params: ConnectToScorebotParams) => {
     void connectToScorebotWithPlaywright({
-      id,
-      waitForScorebot,
-      onScoreboardUpdate,
-      onLogUpdate,
-      onFullLogUpdate,
-      onSocketEvent,
-      onMatchPageState,
-      onRawFrame,
-      ignorePingFrames,
-      onConnect,
-      onDisconnect,
-      dedupeScoreboardUpdates,
-      onStatus,
-      seriesMapsTracker,
-      onMatchSeriesFinal
+      config,
+      ...params
     })
   }
 
 const connectToScorebotWithPlaywright = async ({
+  config,
   id,
   waitForScorebot,
   onScoreboardUpdate,
@@ -497,26 +499,45 @@ const connectToScorebotWithPlaywright = async ({
   onStatus,
   seriesMapsTracker,
   onMatchSeriesFinal
-}: ConnectToScorebotParams) => {
+}: ConnectToScorebotParams & { config: HLTVConfig }) => {
   const status = (message: string) => {
     onStatus?.(message)
   }
 
-  status('opening browser session...')
-  const session = await acquirePlaywrightPage()
-  const { page } = session
+  let session: { page: Page; release: () => Promise<void> } | null = null
+  let page: Page | null = null
+  let flarePage: (FlarePageMeta & { state: MatchPageState }) | null = null
+  let flareSocket: OpenScorebotSocketHandle | null = null
 
-  // Cut renderer CPU/RAM: keep document+script+WS; drop heavy static assets.
-  // Do not block stylesheet — DOM series / match_over parsers may rely on layout.
-  await page.route('**/*', (route: Route) => {
-    const type = route.request().resourceType()
-    if (type === 'image' || type === 'media' || type === 'font') {
-      return route.abort()
-    }
-    return route.continue()
-  })
+  status('loading match via FlareSolverr...')
+  try {
+    flarePage = await fetchFlareMatchPage(config, id)
+  } catch (error) {
+    status(
+      `FlareSolverr match page failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    )
+  }
+
+  if (!flarePage) {
+    status('opening browser session...')
+    session = await acquirePlaywrightPage()
+    page = session.page
+
+    // Cut renderer CPU/RAM: keep document+script+WS; drop heavy static assets.
+    // Do not block stylesheet — DOM series / match_over parsers may rely on layout.
+    await page.route('**/*', (route: Route) => {
+      const type = route.request().resourceType()
+      if (type === 'image' || type === 'media' || type === 'font') {
+        return route.abort()
+      }
+      return route.continue()
+    })
+  }
 
   let closed = false
+  const pageGone = () => closed || (page != null && page.isClosed())
   let connected = false
   let socketReady = false
   let receivedStreamData = false
@@ -564,12 +585,7 @@ const connectToScorebotWithPlaywright = async ({
   }
 
   const refreshPageSeriesMapWins = async (force = false) => {
-    if (
-      !seriesMapsTracker ||
-      closed ||
-      page.isClosed() ||
-      pageSeriesScrapeInFlight
-    ) {
+    if (!seriesMapsTracker || closed || pageGone() || pageSeriesScrapeInFlight) {
       return
     }
 
@@ -580,7 +596,11 @@ const connectToScorebotWithPlaywright = async ({
 
     pageSeriesScrapeInFlight = true
     try {
-      const series = await readSeriesMapWinsFromMatchPage(page)
+      const series = flarePage
+        ? readSeriesMapWinsFromHtml(flarePage.html)
+        : page
+          ? await readSeriesMapWinsFromMatchPage(page)
+          : null
       lastPageSeriesScrapeAt = Date.now()
       if (series) {
         seriesMapsTracker.notePageSeries(
@@ -666,7 +686,7 @@ const connectToScorebotWithPlaywright = async ({
   const scheduleStreamBootstrap = () => {
     clearStreamBootstrapTimer()
 
-    if (closed || receivedStreamData || !socketReady || page.isClosed()) {
+    if (closed || receivedStreamData || !socketReady || pageGone()) {
       return
     }
 
@@ -679,21 +699,35 @@ const connectToScorebotWithPlaywright = async ({
     if (
       closed ||
       receivedStreamData ||
-      page.isClosed() ||
+      pageGone() ||
       streamBootstrapAttempts >= SCOREBOT_STREAM_BOOTSTRAP_MAX_ATTEMPTS
     ) {
       return
     }
 
     streamBootstrapAttempts += 1
+
+    if (flareSocket) {
+      status(
+        `no scoreboard stream yet — re-emit readyForMatch (${streamBootstrapAttempts}/${SCOREBOT_STREAM_BOOTSTRAP_MAX_ATTEMPTS})`
+      )
+      flareSocket.emitReady()
+      if (!closed && !receivedStreamData) {
+        scheduleStreamBootstrap()
+      }
+      return
+    }
+
     status(
       `no scoreboard stream yet — reloading page (${streamBootstrapAttempts}/${SCOREBOT_STREAM_BOOTSTRAP_MAX_ATTEMPTS})`
     )
 
     try {
-      await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 })
+      if (page) {
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 })
+      }
     } catch {
-      if (closed || page.isClosed()) {
+      if (closed || pageGone()) {
         return
       }
     }
@@ -743,7 +777,28 @@ const connectToScorebotWithPlaywright = async ({
   const inspectMatchOverFromPage = async (
     reload: boolean
   ): Promise<MatchPageState | null> => {
-    if (closed || page.isClosed()) {
+    if (closed || pageGone()) {
+      return null
+    }
+
+    if (flarePage) {
+      if (reload) {
+        try {
+          const next = await fetchFlareMatchPage(config, id)
+          if (next) {
+            flarePage = next
+          }
+        } catch {
+          if (closed) {
+            return null
+          }
+        }
+      }
+
+      return readMatchPageStateFromHtml(flarePage.html)
+    }
+
+    if (!page) {
       return null
     }
 
@@ -751,7 +806,7 @@ const connectToScorebotWithPlaywright = async ({
       try {
         await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 })
       } catch {
-        if (closed || page.isClosed()) {
+        if (closed || pageGone()) {
           return null
         }
       }
@@ -779,7 +834,7 @@ const connectToScorebotWithPlaywright = async ({
   }
 
   const checkMatchOverFromPage = async () => {
-    if (closed || matchEndedEmitted || page.isClosed()) {
+    if (closed || matchEndedEmitted || pageGone()) {
       return
     }
 
@@ -846,14 +901,16 @@ const connectToScorebotWithPlaywright = async ({
         mapEndedWatchActive: wasMapEndedWatchActive,
       })
     }
-    void session.release()
+    flareSocket?.close()
+    flareSocket = null
+    void session?.release()
   }
 
   // Consumer-facing done() — intentional end from settle / caller.
   const done = () => closeSession('done')
 
   const verifyMatchOverAfterMapEnded = async () => {
-    if (closed || matchEndedEmitted || page.isClosed() || !mapEndedWatchActive) {
+    if (closed || matchEndedEmitted || pageGone() || !mapEndedWatchActive) {
       return
     }
 
@@ -1031,74 +1088,188 @@ const connectToScorebotWithPlaywright = async ({
     scheduleStreamBootstrap()
   }
 
-  page.on('close', () => closeSession('page_closed'))
-
-  page.on('websocket', (websocket: WebSocket) => {
-    if (!isScorebotSocket(websocket.url())) {
+  const handleFlareSocketEvent = (name: string, data: unknown) => {
+    if (!socketReady) {
+      if (shouldBufferScorebotEvent(name, data, id)) {
+        preReadyEventBuffer.push({ name, data })
+      }
       return
     }
 
-    openScorebotSockets += 1
-    clearDisconnectTimer()
-    status(`scorebot websocket open openSockets=${openScorebotSockets}`)
-
-    if (socketReady && !receivedStreamData) {
-      scheduleStreamBootstrap()
+    if (!isScorebotEventForMatch(name, data, id, socketReady)) {
+      return
     }
 
-    websocket.on('framereceived', (frame: { payload: string | Buffer }) => {
-      const payload = scorebotPayloadToString(frame.payload as string | Buffer)
-      const events = parseScorebotFrame(payload)
+    handleScorebotEvent(name, data)
+  }
 
-      if (
-        onRawFrame &&
-        socketReady &&
-        events.length === 0 &&
-        (!ignorePingFrames || !isPingFrame(payload))
-      ) {
-        onRawFrame(payload)
-      }
+  const startFlareSocket = (
+    state: Extract<MatchPageState, { kind: 'live_scorebot' }>
+  ): boolean => {
+    if (!flarePage) {
+      return false
+    }
 
-      for (const event of events) {
-        if (!socketReady) {
-          if (shouldBufferScorebotEvent(event.name, event.data, id)) {
-            preReadyEventBuffer.push({ name: event.name, data: event.data })
-          }
-          continue
+    flareSocket = openScorebotSocket({
+      scorebotUrl: state.scorebotUrl,
+      scorebotId: state.scorebotId,
+      cookies: flarePage.cookies,
+      userAgent: flarePage.userAgent,
+      onEvent: handleFlareSocketEvent,
+      onOpen: () => {
+        openScorebotSockets = 1
+        clearDisconnectTimer()
+        status('scorebot socket open openSockets=1')
+        if (socketReady && !receivedStreamData) {
+          scheduleStreamBootstrap()
         }
-
-        if (!isScorebotEventForMatch(event.name, event.data, id, socketReady)) {
-          continue
+      },
+      onClose: () => {
+        openScorebotSockets = 0
+        status(
+          `scorebot socket closed openSockets=0 hadStream=${receivedStreamData} ` +
+            `mapEndedWatch=${mapEndedWatchActive}`
+        )
+        if (!socketReady || closed || !receivedStreamData) {
+          return
         }
-
-        handleScorebotEvent(event.name, event.data)
+        scheduleDisconnectIfIdle()
+      },
+      onError: (err) => {
+        status(
+          `scorebot socket error: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
       }
     })
 
-    // Playwright does not expose WS close code/reason — only that the socket died.
-    websocket.on('close', () => {
-      openScorebotSockets = Math.max(0, openScorebotSockets - 1)
-      status(
-        `scorebot websocket closed openSockets=${openScorebotSockets} ` +
-          `hadStream=${receivedStreamData} mapEndedWatch=${mapEndedWatchActive}`
-      )
+    return flareSocket != null
+  }
 
-      if (!socketReady || closed || !receivedStreamData) {
+  const waitForLiveFromFlare = async (
+    options: Required<WaitForScorebotOptions>
+  ): Promise<MatchPageState> => {
+    const startedAt = Date.now()
+    const deadline = startedAt + options.timeoutMs
+
+    while (Date.now() < deadline) {
+      if (closed) {
+        return { kind: 'wait_timeout', waitedMs: Date.now() - startedAt }
+      }
+
+      try {
+        const next = await fetchFlareMatchPage(config, id)
+        if (next) {
+          flarePage = next
+          if (onMatchPageState) {
+            onMatchPageState(next.state, done)
+          }
+          if (next.state.kind === 'live_scorebot') {
+            enableSocketStream()
+            return next.state
+          }
+          if (
+            next.state.kind === 'match_over' ||
+            next.state.kind === 'postponed'
+          ) {
+            return next.state
+          }
+        }
+      } catch (error) {
+        status(
+          `FlareSolverr wait poll failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        )
+      }
+
+      await sleep(options.reloadIntervalMs)
+    }
+
+    return { kind: 'wait_timeout', waitedMs: Date.now() - startedAt }
+  }
+
+  if (page) {
+    page.on('close', () => closeSession('page_closed'))
+
+    page.on('websocket', (websocket: WebSocket) => {
+      if (!isScorebotSocket(websocket.url())) {
         return
       }
 
-      scheduleDisconnectIfIdle()
+      openScorebotSockets += 1
+      clearDisconnectTimer()
+      status(`scorebot websocket open openSockets=${openScorebotSockets}`)
+
+      if (socketReady && !receivedStreamData) {
+        scheduleStreamBootstrap()
+      }
+
+      websocket.on('framereceived', (frame: { payload: string | Buffer }) => {
+        const payload = scorebotPayloadToString(frame.payload as string | Buffer)
+        const events = parseScorebotFrame(payload)
+
+        if (
+          onRawFrame &&
+          socketReady &&
+          events.length === 0 &&
+          (!ignorePingFrames || !isPingFrame(payload))
+        ) {
+          onRawFrame(payload)
+        }
+
+        for (const event of events) {
+          if (!socketReady) {
+            if (shouldBufferScorebotEvent(event.name, event.data, id)) {
+              preReadyEventBuffer.push({ name: event.name, data: event.data })
+            }
+            continue
+          }
+
+          if (!isScorebotEventForMatch(event.name, event.data, id, socketReady)) {
+            continue
+          }
+
+          handleScorebotEvent(event.name, event.data)
+        }
+      })
+
+      // Playwright does not expose WS close code/reason — only that the socket died.
+      websocket.on('close', () => {
+        openScorebotSockets = Math.max(0, openScorebotSockets - 1)
+        status(
+          `scorebot websocket closed openSockets=${openScorebotSockets} ` +
+            `hadStream=${receivedStreamData} mapEndedWatch=${mapEndedWatchActive}`
+        )
+
+        if (!socketReady || closed || !receivedStreamData) {
+          return
+        }
+
+        scheduleDisconnectIfIdle()
+      })
     })
-  })
+  }
 
   try {
-    status('loading HLTV match page...')
-    await page.goto(
-      `https://www.hltv.org/matches/${id}/${generateRandomSuffix()}`,
-      { waitUntil: 'domcontentloaded', timeout: 60000 }
-    )
+    let matchPageState: MatchPageState
 
-    let matchPageState = await readPageStateFromDom(page)
+    if (flarePage) {
+      matchPageState = flarePage.state
+      status(`FlareSolverr match page state=${matchPageState.kind}`)
+    } else if (page) {
+      status('loading HLTV match page...')
+      await page.goto(
+        `https://www.hltv.org/matches/${id}/${generateRandomSuffix()}`,
+        { waitUntil: 'domcontentloaded', timeout: 60000 }
+      )
+      matchPageState = await readPageStateFromDom(page)
+    } else {
+      closeSession('no_match_page')
+      return
+    }
+
     if (onMatchPageState) {
       onMatchPageState(matchPageState, done)
     }
@@ -1126,17 +1297,19 @@ const connectToScorebotWithPlaywright = async ({
         return
       }
 
-      matchPageState = await waitForLiveScorebot(page, waitOptions, {
-        onState: (state) => {
-          if (onMatchPageState) {
-            onMatchPageState(state, done)
-          }
-        },
-        onLiveScorebot: () => {
-          enableSocketStream()
-        },
-        isClosed: () => closed,
-      })
+      matchPageState = flarePage
+        ? await waitForLiveFromFlare(waitOptions)
+        : await waitForLiveScorebot(page!, waitOptions, {
+            onState: (state) => {
+              if (onMatchPageState) {
+                onMatchPageState(state, done)
+              }
+            },
+            onLiveScorebot: () => {
+              enableSocketStream()
+            },
+            isClosed: () => closed
+          })
 
       if (matchPageState.kind !== 'live_scorebot') {
         closeSession(
@@ -1150,11 +1323,22 @@ const connectToScorebotWithPlaywright = async ({
 
     enableSocketStream()
 
-    matchOverPoll = setInterval(() => {
-      void checkMatchOverFromPage()
-    }, MATCH_OVER_POLL_MS)
+    if (flarePage && matchPageState.kind === 'live_scorebot') {
+      if (!startFlareSocket(matchPageState)) {
+        closeSession('scorebot_socket_auth_failed')
+        return
+      }
+    }
 
-    await page.waitForTimeout(1500)
+    if (!flarePage) {
+      matchOverPoll = setInterval(() => {
+        void checkMatchOverFromPage()
+      }, MATCH_OVER_POLL_MS)
+
+      if (page) {
+        await page.waitForTimeout(1500)
+      }
+    }
   } catch (error) {
     closeSession('goto_or_setup_error')
     throw error

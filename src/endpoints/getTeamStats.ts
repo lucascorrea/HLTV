@@ -343,26 +343,20 @@ function countTeamStatsMatchRows(m$: HLTVPage): number {
   return m$('.stats-table tbody tr').length
 }
 
-/** Detect truncated matches HTML (common under FlareSolverr load during teams cron). */
-function shouldRetryTeamStatsMatchesFetch(
+/** Detect truncated matches HTML (FlareSolverr load during teams cron). */
+export function shouldRetryTeamStatsMatchesFetch(
   rowCount: number,
   overviewMapsPlayed: number
 ): boolean {
-  // Empty career (new org / upcoming-only): 0 rows + 0 mapsPlayed is valid — do not retry.
+  // Empty career (new org / upcoming-only): 0 rows + 0 mapsPlayed is valid.
   if (rowCount === 0) {
     return overviewMapsPlayed > 0
   }
+  // Established teams: matches table much shorter than overview mapsPlayed.
+  // Do NOT retry when counts match — small orgs (5 maps / 5 rows) are complete.
   if (
     overviewMapsPlayed >= 40 &&
     rowCount < overviewMapsPlayed * TEAM_STATS_MIN_MATCHES_RATIO
-  ) {
-    return true
-  }
-  // Overview and rows both tiny and equal — often partial page (~15–25 rows).
-  if (
-    rowCount <= 25 &&
-    overviewMapsPlayed > 0 &&
-    rowCount === overviewMapsPlayed
   ) {
     return true
   }

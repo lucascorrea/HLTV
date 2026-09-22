@@ -100,8 +100,23 @@ export type {
   Stream,
   FullMatch as Match
 } from './endpoints/getMatch'
+export {
+  applyLiveScoreboardToMaps,
+  extractLiveMatchScoreFromHtml,
+  isHydratedLiveScoreboard,
+  liveMatchScoreFromSides,
+  liveScoreboardFromScorebotBoard,
+  readLiveScoreboard,
+  readLiveScoreboardFromHtml
+} from './endpoints/parseLiveScoreboard'
+export type {
+  LiveMatchScoreExtract,
+  LiveScoreboardSides
+} from './endpoints/parseLiveScoreboard'
+export { fetchLiveScoreboardSnapshot } from './scorebot/fetchLiveScoreboardSnapshot'
+export type { ScorebotSnapshotBoard } from './scorebot/fetchLiveScoreboardSnapshot'
 
-export { MatchEventType, MatchFilter } from './endpoints/getMatches'
+export { MatchEventType, MatchFilter, parseMatchesListing, unixFromMatchListEl } from './endpoints/getMatches'
 export type { MatchPreview, GetMatchesArguments } from './endpoints/getMatches'
 
 export { WinType } from './endpoints/connectToScorebot'
@@ -189,4 +204,9 @@ export {
   type FlareSolverrLoadPageOptions,
 } from './config'
 
-export { fetchPage, fetchPageFlareSolverr } from './utils'
+export {
+  fetchPage,
+  fetchPageFlareSolverr,
+  waitForHltvDocument,
+  assertHltvHtml,
+} from './utils'

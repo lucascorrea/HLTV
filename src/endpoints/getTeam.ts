@@ -4,7 +4,8 @@ import { Article } from '../shared/Article'
 import { Country } from '../shared/Country'
 import { Player } from '../shared/Player'
 import { fetchPage, generateRandomSuffix, getIdAt, parseNumber } from '../utils'
-import { fetchPageFlareSolverr } from '../utils'
+import { parseTeamRankingDevelopment } from './parseTeamRankingDevelopment'
+import type { RankingPoint } from './parseTeamRankingDevelopment'
 
 export enum TeamPlayerType {
   Coach = 'Coach',
@@ -41,12 +42,6 @@ export interface TeamMatchResult extends TeamMatch {
   }
 }
 
-// Definir uma interface para o desenvolvimento do ranking
-export interface RankingPoint {
-  rank: number
-  date: string
-}
-
 export interface FullTeam {
   id: number
   name: string
@@ -67,9 +62,10 @@ export const getTeam =
   (config: HLTVConfig) =>
   async ({ id }: { id: number }): Promise<FullTeam> => {
     const $ = HLTVScraper(
-      await fetchPageFlareSolverr(
+      await fetchPage(
         `https://www.hltv.org/team/${id}/${generateRandomSuffix()}`,
-        config.loadPage
+        config.loadPage,
+        config.loadPageFlareSolverr
       )
     )
 
@@ -82,8 +78,14 @@ export const getTeam =
     const facebook = $('.facebook').parent().attr('href')
     const twitter = $('.twitter').parent().attr('href')
     const instagram = $('.instagram').parent().attr('href')
-    const rankText = $('.profile-team-stat .right').eq(1).text() || $('.profile-team-stat .right').first().text();
-    const rank = rankText ? parseNumber(rankText.replace('#', '')) : undefined;
+    const worldRankRow = $('.profile-team-stat').filter((_, el) =>
+      (el.text() || '').toLowerCase().includes('world ranking')
+    )
+    const rankText =
+      worldRankRow.find('.right').text() ||
+      $('.profile-team-stat .right').eq(1).text() ||
+      $('.profile-team-stat .right').first().text()
+    const rank = rankText ? parseNumber(rankText.replace('#', '')) : undefined
 
     const players = $('.players-table tbody tr')
       .toArray()
@@ -131,35 +133,17 @@ export const getTeam =
           : [])
       )
 
-    let rankingDevelopment
-
+    let rankingDevelopment: RankingPoint[]
     try {
-      const rankingConfig = $('.graph').attr('data-fusionchart-config');
-      
-      if (!rankingConfig) {
-        rankingDevelopment = [];
-      } else {
-        const rankings = JSON.parse(rankingConfig);
-        rankingDevelopment = rankings.dataSource.dataset[0].data
-          .map((x: any) => {
-            // Extrair a data do tooltext usando regex
-            const dateMatch = x.tooltext && x.tooltext.match ? x.tooltext.match(/<div class="subtitle">([^<]+)<\/div>/) : null;
-            const dateStr = dateMatch ? dateMatch[1] : '';
-            
-            // Verificar se x.value existe antes de criar o objeto
-            if (x.value) {
-              return {
-                rank: parseNumber(x.value),
-                date: dateStr
-              };
-            }
-            return null; // Retorna null para objetos sem rank
-          })
-          .filter((item: any) => item !== null); // Remove os objetos null do array
-      }
+      rankingDevelopment = parseTeamRankingDevelopment({
+        chartJs: $('[data-chartjs-config]')
+          .toArray()
+          .map((el) => el.attr('data-chartjs-config')),
+        fusion: $('.graph').attr('data-fusionchart-config'),
+      })
     } catch (error) {
-      console.error('Error parsing ranking data:', error);
-      rankingDevelopment = [];
+      console.error('Error parsing ranking data:', error)
+      rankingDevelopment = []
     }
 
     const country = {

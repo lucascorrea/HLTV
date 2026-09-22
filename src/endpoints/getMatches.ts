@@ -1,6 +1,6 @@
 import { stringify } from 'querystring'
 import { HLTVConfig } from '../config'
-import { HLTVPageElement, HLTVScraper } from '../scraper'
+import { HLTVPage, HLTVPageElement, HLTVScraper } from '../scraper'
 import { Team } from '../shared/Team'
 import { Event } from '../shared/Event'
 import { fetchPage, getIdAt } from '../utils'
@@ -48,6 +48,140 @@ function teamIdFromListEl(el: HLTVPageElement, side: 1 | 2): number | undefined 
   )
 }
 
+/** Live cards often omit `.matchTime`; unix may sit on `.match-time` or any `[data-unix]`. */
+export function unixFromMatchListEl(el: HLTVPageElement): number | undefined {
+  return (
+    el.numFromAttr('data-unix') ??
+    el.find('.matchTime').numFromAttr('data-unix') ??
+    el.find('.match-time').numFromAttr('data-unix') ??
+    el.find('[data-unix]').first().numFromAttr('data-unix')
+  )
+}
+
+function teamLogoFromEl(el: HLTVPageElement, selector: string, index = 0): string {
+  const node = el.find(selector).eq(index)
+  const src = node.attr('src') || node.attr('data-cookieblock-src') || ''
+  return !src.includes('placeholder.svg') ? src : ''
+}
+
+function liveTeamsFromEl(el: HLTVPageElement): { team1: Team; team2: Team } {
+  const logo1 = teamLogoFromEl(el, '.match-team-logo:not(.day-only)', 0)
+  const logo2 = teamLogoFromEl(el, '.match-team-logo:not(.day-only)', 1)
+  return {
+    team1: {
+      name:
+        el.find('.match-teamname').first().text() ||
+        el.find('.team1 .team').text(),
+      id: teamIdFromListEl(el, 1),
+      logo: logo1
+    },
+    team2: {
+      name:
+        el.find('.match-teamname').eq(1).text() ||
+        el.find('.team2 .team').text(),
+      id: teamIdFromListEl(el, 2),
+      logo: logo2
+    }
+  }
+}
+
+function upcomingTeamsFromEl(el: HLTVPageElement): { team1: Team; team2: Team } {
+  const logo1 =
+    el.find('.match-team.team1 .match-team-logo').length == 2
+      ? teamLogoFromEl(el, '.match-team.team1 .match-team-logo', 1)
+      : teamLogoFromEl(el, '.match-team.team1 .match-team-logo', 0)
+  const logo2 =
+    el.find('.match-team.team2 .match-team-logo').length == 2
+      ? teamLogoFromEl(el, '.match-team.team2 .match-team-logo', 1)
+      : teamLogoFromEl(el, '.match-team.team2 .match-team-logo', 0)
+  return {
+    team1: {
+      name:
+        el.find('.match-teamname').first().text() ||
+        el.find('.team1 .team').text(),
+      id: teamIdFromListEl(el, 1),
+      logo: logo1
+    },
+    team2: {
+      name:
+        el.find('.match-teamname').eq(1).text() ||
+        el.find('.team2 .team').text(),
+      id: teamIdFromListEl(el, 2),
+      logo: logo2
+    }
+  }
+}
+
+function dedupeMatchPreviews(matches: MatchPreview[]): MatchPreview[] {
+  const seen = new Set<number>()
+  const out: MatchPreview[] = []
+  for (const match of matches) {
+    if (match?.id == null || seen.has(match.id)) continue
+    seen.add(match.id)
+    out.push(match)
+  }
+  return out
+}
+
+export function parseMatchesListing($: HLTVPage): MatchPreview[] {
+  const events = $('.match-event')
+    .toArray()
+    .map((el) => {
+      return {
+        id: el.attr('data-event-id') ? Number(el.attr('data-event-id')) : undefined,
+        name: el.attr('data-event-headline')?.trim() || '',
+        logo: el.find('.match-event-logo').attr('src') ||
+              el.find('.match-event-logo').attr('data-cookieblock-src') || '',
+      };
+    });
+
+  const liveMatches: MatchPreview[] = $('.matches-chronologically .live-matches-wrapper .liveMatches .live-match-container')
+    .toArray()
+    .map((el) => {
+      const id = el.find('.a-reset').attrThen('href', getIdAt(2))!
+      const stars = parseInt(el.attr('stars'), 10) || 0;
+      const live = el.find('.match-meta-live').text().trim() === 'Live';
+      const title = el.find('.match-event .text-ellipsis').text().trim() || undefined;
+      const date = unixFromMatchListEl(el)
+      const { team1, team2 } = liveTeamsFromEl(el)
+      const format = el.find('.match-meta').last().text().trim();
+      const eventName = el.find('.match-event').attr('data-event-headline') || '';
+      const event = events.find((x) => x.name === eventName)
+
+      return { id, date, stars, title, team1, team2, format, event, live }
+    })
+
+  // Do not require `.matches-chronologically-hide` — filter toggles that class
+  // and would drop the upcoming list while live cards still parse.
+  const upcomingMatches: MatchPreview[] = $('.matches-chronologically .matches-list .match-zone-wrapper')
+    .toArray()
+    .map((el) => {
+      const id = el.find('.a-reset').attrThen('href', getIdAt(2))!
+      const stars = parseInt(el.attr('stars'), 10) || 0;
+      const live = el.find('.matchTime.matchLive').text() === 'LIVE'
+      const title = el.find('.match-no-info').text() || undefined
+      const date = unixFromMatchListEl(el)
+
+      let team1
+      let team2
+
+      if (!title) {
+        const teams = upcomingTeamsFromEl(el)
+        team1 = teams.team1
+        team2 = teams.team2
+      }
+
+      const format = el.find('.match-meta').last().text().trim();
+
+      const eventName = el.find('.match-event').attr('data-event-headline') || '';
+      const event = events.find((x) => x.name === eventName)
+
+      return { id, date, stars, title, team1, team2, format, event, live }
+    })
+
+  return dedupeMatchPreviews(liveMatches.concat(upcomingMatches))
+}
+
 export const getMatches =
   (config: HLTVConfig) =>
     async ({
@@ -71,124 +205,5 @@ export const getMatches =
         )
       )
 
-      const events = $('.match-event')
-        .toArray()
-        .map((el) => {
-          return {
-            id: el.attr('data-event-id') ? Number(el.attr('data-event-id')) : undefined,
-            name: el.attr('data-event-headline')?.trim() || '',
-            logo: el.find('.match-event-logo').attr('src') || 
-                  el.find('.match-event-logo').attr('data-cookieblock-src') || '',
-          };
-        });
-
-      const liveMatches = $('.matches-chronologically .live-matches-wrapper .liveMatches .live-match-container')
-        .toArray()
-        .map((el) => {
-          const id = el.find('.a-reset').attrThen('href', getIdAt(2))!
-          const stars = parseInt(el.attr('stars'), 10) || 0;
-          const live = el.find('.match-meta-live').text().trim() === 'Live';
-          const title = el.find('.match-event .text-ellipsis').text().trim() || undefined;
-          const date = el.find('.matchTime').numFromAttr('data-unix')
-
-          let team1
-          let team2
-
-          if (title) {
-            var logo1 = ''
-            var logo2 = ''
-
-            const logoSrc1 = el.find('.match-team-logo:not(.day-only)').first().attr('src') || 
-                            el.find('.match-team-logo:not(.day-only)').first().attr('data-cookieblock-src') || '';
-            logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
-            const logoSrc2 = el.find('.match-team-logo:not(.day-only)').eq(1).attr('src') || 
-                            el.find('.match-team-logo:not(.day-only)').eq(1).attr('data-cookieblock-src') || '';
-            logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
-
-            team1 = {
-              name:
-                el.find('.match-teamname').first().text() ||
-                el.find('.team1 .team').text(),
-              id: teamIdFromListEl(el, 1),
-              logo: logo1
-            }
-
-            team2 = {
-              name:
-                el.find('.match-teamname').eq(1).text() ||
-                el.find('.team2 .team').text(),
-              id: teamIdFromListEl(el, 2),
-              logo: logo2
-            }
-          }
-
-          const format = el.find('.match-meta').last().text().trim();
-          const eventName = el.find('.match-event').attr('data-event-headline') || '';
-          const event = events.find((x) => x.name === eventName)
-
-          return { id, date, stars, title, team1, team2, format, event, live }
-        })
-
-      const upcomingMatches = $('.matches-chronologically.matches-chronologically-hide .matches-list .match-zone-wrapper')
-        .toArray()
-        .map((el) => {
-          const id = el.find('.a-reset').attrThen('href', getIdAt(2))!
-          const stars = parseInt(el.attr('stars'), 10) || 0;
-          const live = el.find('.matchTime.matchLive').text() === 'LIVE'
-          const title = el.find('.match-no-info').text() || undefined
-          const date = el.find('.match-time').numFromAttr('data-unix')
-          
-          let team1
-          let team2
-
-          if (!title) {
-            var logo1 = ''
-            var logo2 = ''
-          
-            if (el.find('.match-team.team1 .match-team-logo').length == 2) {
-              const logoSrc1 = el.find('.match-team.team1 .match-team-logo').eq(1).attr('src') || 
-                              el.find('.match-team.team1 .match-team-logo').eq(1).attr('data-cookieblock-src') || '';
-              logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
-            } else {
-              const logoSrc1 = el.find('.match-team.team1 .match-team-logo').first().attr('src') || 
-                              el.find('.match-team.team1 .match-team-logo').first().attr('data-cookieblock-src') || '';
-              logo1 = !logoSrc1?.includes('placeholder.svg') ? logoSrc1 : '';
-            }
-
-            if (el.find('.match-team.team2 .match-team-logo').length == 2) {
-              const logoSrc2 = el.find('.match-team.team2 .match-team-logo').eq(1).attr('src') || 
-                              el.find('.match-team.team2 .match-team-logo').eq(1).attr('data-cookieblock-src') || '';
-              logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
-            } else {
-              const logoSrc2 = el.find('.match-team.team2 .match-team-logo').first().attr('src') || 
-                              el.find('.match-team.team2 .match-team-logo').first().attr('data-cookieblock-src') || '';
-              logo2 = !logoSrc2?.includes('placeholder.svg') ? logoSrc2 : '';
-            }
-            
-            team1 = {
-              name:
-                el.find('.match-teamname').first().text() ||
-                el.find('.team1 .team').text(),
-              id: teamIdFromListEl(el, 1),
-              logo: logo1
-            }
-
-            team2 = {
-              name:
-                el.find('.match-teamname').eq(1).text() ||
-                el.find('.team2 .team').text(),
-              id: teamIdFromListEl(el, 2),
-              logo: logo2
-            }
-          }
-
-          const format = el.find('.match-meta').last().text().trim();
-
-          const eventName = el.find('.match-event').attr('data-event-headline') || '';
-          const event = events.find((x) => x.name === eventName)
-
-          return { id, date, stars, title, team1, team2, format, event, live }
-        })
-
-      return liveMatches.concat(upcomingMatches)
+      return parseMatchesListing($)
     }

@@ -6,9 +6,9 @@ const log = (promise: Promise<any>) =>
     .then((res) => console.dir(res, { depth: null }))
     .catch((err) => console.log(err))
 
-// log(HLTV.getMatch({ id: 2393771 }))
+// log(HLTV.getMatch({ id: 2397824 }))
 // log(HLTV.getMatches( { teamIds: [11571] }))
-// log(HLTV.getMatches())
+log(HLTV.getMatches())
 // log(HLTV.getEvent({ id: 8171 }))
 // log(HLTV.getEvents())
 // log(HLTV.getMatchMapStats({ id: 116437 }))
@@ -28,4 +28,4 @@ const log = (promise: Promise<any>) =>
 // log(HLTV.getResults( { startDate: '2024-11-16', endDate: '2024-11-17' }))
 // log(HLTV.getNews())
 
-runScorebotDemo({ id: 2396013 })
+// runScorebotDemo({ id: 2398104 })

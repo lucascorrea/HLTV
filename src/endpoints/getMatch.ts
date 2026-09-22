@@ -11,6 +11,8 @@ import {
   percentageToDecimalOdd,
   toScrapeError
 } from '../utils'
+import { getFlareMeta } from '../flarePage'
+import { fetchLiveScoreboardSnapshot } from '../scorebot/fetchLiveScoreboardSnapshot'
 import { Player } from '../shared/Player'
 import {
   fromFullMatchFormat,
@@ -19,6 +21,11 @@ import {
 } from '../shared/MatchFormat'
 import { ResultMatch } from '../shared/ResultMatch'
 import { resolveSeriesResultMatch } from '../scorebot/mapSeriesWins'
+import {
+  applyLiveScoreboardToMaps,
+  liveScoreboardFromScorebotBoard,
+  readLiveScoreboard
+} from './parseLiveScoreboard'
 
 export enum MatchStatus {
   Live = 'Live',
@@ -156,6 +163,7 @@ export const getMatch =
         config.loadPageFlareSolverr
       )
       htmlLength = root.html()?.length ?? 0
+      const flareMeta = getFlareMeta(root)
 
       step = 'HLTVScraper'
       $ = HLTVScraper(root)
@@ -179,7 +187,17 @@ export const getMatch =
       step = 'parse:odds,maps,players,streams,demos'
       const odds = getOdds($)
       const oddsCommunity = getCommunityOdds($)
-      const maps = getMaps($)
+      let maps = getMaps($)
+      if (status === MatchStatus.Live) {
+        maps = await fillLiveMapsFromScorebot({
+          $,
+          maps,
+          team1Name: team1?.name,
+          team2Name: team2?.name,
+          cookies: flareMeta?.cookies,
+          userAgent: flareMeta?.userAgent
+        })
+      }
       const players = getPlayers($)
       const streams = getStreams($)
       const demos = getDemos($)
@@ -564,8 +582,59 @@ function getCommunityOdds($: HLTVPage): ProviderOdds | undefined {
   }
 }
 
+async function fillLiveMapsFromScorebot({
+  $,
+  maps,
+  team1Name,
+  team2Name,
+  cookies,
+  userAgent
+}: {
+  $: HLTVPage
+  maps: MapResult[]
+  team1Name?: string
+  team2Name?: string
+  cookies?: { name: string; value: string; domain?: string }[]
+  userAgent?: string
+}): Promise<MapResult[]> {
+  const scorebotUrl = $('#scoreboardElement').attr('data-scorebot-url')
+  const scorebotId = $('#scoreboardElement').attr('data-scorebot-id')
+  if (!scorebotUrl || !scorebotId) {
+    console.warn('[getMatch] live scorebot fill skipped: no scorebot attrs')
+    return maps
+  }
+  if (!cookies?.length || !userAgent) {
+    console.warn(
+      '[getMatch] live scorebot fill skipped: missing Flare cookies/UA'
+    )
+    return maps
+  }
+
+  try {
+    const board = await fetchLiveScoreboardSnapshot({
+      scorebotUrl,
+      scorebotId,
+      cookies,
+      userAgent
+    })
+    const live = liveScoreboardFromScorebotBoard(board)
+    if (!live) {
+      console.warn('[getMatch] live scorebot fill skipped: no scoreboard frame')
+      return maps
+    }
+    return applyLiveScoreboardToMaps(maps, live, team1Name, team2Name)
+  } catch (err) {
+    console.warn(
+      `[getMatch] live scorebot fill failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    )
+    return maps
+  }
+}
+
 function getMaps($: HLTVPage): MapResult[] {
-  return $('.mapholder')
+  const maps = $('.mapholder')
     .toArray()
     .map((mapEl) => {
       const team1TotalRounds = Number(
@@ -613,6 +682,16 @@ function getMaps($: HLTVPage): MapResult[] {
         statsId
       }
     })
+
+  const live = readLiveScoreboard($)
+  if (!live) return maps
+
+  return applyLiveScoreboardToMaps(
+    maps,
+    live,
+    $('.team1-gradient .teamName').trimText(),
+    $('.team2-gradient .teamName').trimText()
+  )
 }
 
 function getPlayers($: HLTVPage) {

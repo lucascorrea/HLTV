@@ -1,8 +1,10 @@
 import { execFile } from 'child_process'
+import fs from 'fs'
 import { Agent as HttpsAgent } from 'https'
 import { Agent as HttpAgent } from 'http'
 import axios from 'axios'
-import { getBrowser } from './utils'
+import { getBrowser, waitForHltvDocument } from './utils'
+import type { FlareCookie, FlareLoadPage, FlarePageMeta } from './flarePage'
 
 /**
  * Runs a shell snippet (same as `sh -c`). Only invoked when FLARESOLVERR_RECOVERY_SHELL is set.
@@ -76,7 +78,7 @@ export interface FlareSolverrLoadPageOptions {
 /** HTML via FlareSolverr (`POST .../v1`, cmd request.get). Use em rotas /stats/ bloqueadas no Playwright. */
 export const defaultLoadPageFlareSolverr = (
   options: FlareSolverrLoadPageOptions = {}
-): ((url: string) => Promise<string>) => {
+): FlareLoadPage => {
   const base = (
     options.flareSolverrUrl ||
     process.env.FLARESOLVERR_URL ||
@@ -149,6 +151,93 @@ export const defaultLoadPageFlareSolverr = (
     5_000,
     Number(process.env.FLARESOLVERR_SESSION_LOCK_MAX_WAIT_MS || 15_000)
   )
+  // One Chromium for every PM2 process. Per-process hltv_<timestamp> sessions
+  // plus reapExcess made workers destroy each other's browsers and immediately
+  // cold-start another (CF challenge, ~1 CPU, hundreds of MB) while live
+  // matches only need the cookies.
+  const useSharedSession =
+    String(process.env.FLARESOLVERR_SHARED_SESSION ?? 'true')
+      .trim()
+      .toLowerCase() !== 'false'
+  const sharedSessionId =
+    (process.env.FLARESOLVERR_SHARED_SESSION_ID || 'hltv_pool').trim() ||
+    'hltv_pool'
+  const sharedLockWaitMs = Math.max(
+    sessionLockMaxWaitMs,
+    useSharedSession ? 60_000 : 0
+  )
+  const sharedLockDir =
+    process.env.FLARESOLVERR_LOCK_DIR || '/tmp/hltv-flare-session.lock'
+  const sharedLockStaleMs = Math.max(
+    30_000,
+    Number(process.env.FLARESOLVERR_LOCK_STALE_MS || 200_000)
+  )
+
+  const pidAlive = (pid: number): boolean => {
+    if (!Number.isFinite(pid) || pid <= 0) return false
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const releaseSharedLock = () => {
+    try {
+      const owner = Number(fs.readFileSync(`${sharedLockDir}/owner`, 'utf8'))
+      if (owner !== process.pid) return
+    } catch {
+      // Lock dir already gone, or owner file missing after a crash.
+    }
+    try {
+      fs.rmSync(sharedLockDir, { recursive: true, force: true })
+    } catch {
+      // Another process may have taken the lock.
+    }
+  }
+
+  const withSharedSessionLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (!useSharedSession) return fn()
+    const started = Date.now()
+    for (;;) {
+      try {
+        fs.mkdirSync(sharedLockDir)
+        fs.writeFileSync(`${sharedLockDir}/owner`, String(process.pid))
+        break
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code
+        if (code !== 'EEXIST') throw error
+        let owner = 0
+        try {
+          owner = Number(fs.readFileSync(`${sharedLockDir}/owner`, 'utf8'))
+        } catch {
+          owner = 0
+        }
+        let age = sharedLockStaleMs + 1
+        try {
+          age = Date.now() - fs.statSync(sharedLockDir).mtimeMs
+        } catch {
+          age = sharedLockStaleMs + 1
+        }
+        if ((owner > 0 && !pidAlive(owner)) || age > sharedLockStaleMs) {
+          fs.rmSync(sharedLockDir, { recursive: true, force: true })
+          continue
+        }
+        if (Date.now() - started > sharedLockWaitMs) {
+          throw new Error(
+            `FlareSolverr session lock wait exceeded ${sharedLockWaitMs}ms`
+          )
+        }
+        await sleepMs(100)
+      }
+    }
+    try {
+      return await fn()
+    } finally {
+      releaseSharedLock()
+    }
+  }
 
   const withSessionRequestLock = async <T>(fn: () => Promise<T>): Promise<T> => {
     let release!: () => void
@@ -326,7 +415,9 @@ export const defaultLoadPageFlareSolverr = (
   }
 
   const scheduleIdleDestroy = () => {
-    if (!reuseSession) return
+    // Shared browser outlives this process. Idle destroy here would kill
+    // the Chrome another worker is navigating.
+    if (!reuseSession || useSharedSession) return
     clearIdleTimer()
     idleDestroyTimer = setTimeout(async () => {
       const sessionToDestroy = currentSessionId
@@ -346,7 +437,10 @@ export const defaultLoadPageFlareSolverr = (
   const createSessionOnce = async (): Promise<string> => {
     const { data } = await axios.post(
       `${base}/v1`,
-      { cmd: 'sessions.create', session: `hltv_${Date.now()}` },
+      {
+        cmd: 'sessions.create',
+        session: useSharedSession ? sharedSessionId : `hltv_${Date.now()}`,
+      },
       {
         headers: { 'Content-Type': 'application/json' },
         timeout: maxTimeout,
@@ -427,6 +521,7 @@ export const defaultLoadPageFlareSolverr = (
         `request done session=${sessionId} count=${state.completedRequests}/${recycleSessionAfterRequests}`
       )
       if (
+        !useSharedSession &&
         state.completedRequests >= recycleSessionAfterRequests &&
         !state.recycleScheduled
       ) {
@@ -465,6 +560,7 @@ export const defaultLoadPageFlareSolverr = (
     if (exitHookRegistered) return
     exitHookRegistered = true
     const cleanup = () => {
+      if (useSharedSession) return
       const sessionToDestroy = currentSessionId
       currentSessionId = null
       if (sessionToDestroy) {
@@ -520,7 +616,9 @@ export const defaultLoadPageFlareSolverr = (
       const sessions: string[] = Array.isArray(data?.sessions)
         ? data.sessions.filter((s: unknown) => typeof s === 'string')
         : []
-      const owned = sessions.filter((s) => s.startsWith('hltv_'))
+      // Never destroy hltv_pool. Timestamp ids are the per-process sessions
+      // that workers were killing out from under each other.
+      const owned = sessions.filter((s) => /^hltv_\d+$/.test(s))
       if (owned.length <= maxSessions) return
 
       const sortable = owned
@@ -553,8 +651,8 @@ export const defaultLoadPageFlareSolverr = (
     }
   }
 
-  return async (url: string) => {
-    return withSessionRequestLock(async () => {
+  const requestPage = async (url: string): Promise<FlarePageMeta> => {
+    return withSharedSessionLock(() => withSessionRequestLock(async () => {
     const runRequest = async (forceNewSession: boolean) => {
       if (forceNewSession) {
         await resetCurrentSession()
@@ -607,16 +705,31 @@ export const defaultLoadPageFlareSolverr = (
     }
 
     await markRequestDone(requestResult.session, true)
-    return data.solution.response as string
-    })
+    const solution = data.solution as {
+      response: string
+      cookies?: FlareCookie[]
+      userAgent?: string
+    }
+    return {
+      html: solution.response,
+      cookies: Array.isArray(solution.cookies) ? solution.cookies : [],
+      userAgent: String(solution.userAgent || '')
+    } satisfies FlarePageMeta
+    }))
   }
+
+  const loadPage = (async (url: string) => {
+    return (await requestPage(url)).html
+  }) as FlareLoadPage
+  loadPage.withMeta = requestPage
+  return loadPage
 }
 
 export interface HLTVConfig {
   loadPage: (url: string) => Promise<string>
   httpAgent: HttpsAgent | HttpAgent
   /** Opcional: usado em getTeamStats na página principal de stats (Cloudflare mais rígido em /stats/). */
-  loadPageFlareSolverr?: (url: string) => Promise<string>
+  loadPageFlareSolverr?: FlareLoadPage
 }
 
 export const defaultLoadPage =
@@ -629,6 +742,7 @@ export const defaultLoadPage =
       
       await page.setViewportSize({ width: 1280, height: 720 })
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+      await waitForHltvDocument(page)
       
       const html = await page.content()
       await page.close()

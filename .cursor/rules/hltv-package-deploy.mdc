@@ -1,0 +1,17 @@
+---
+description: After editing this package, build lib/ and restart CSLiveStats prod PM2. Listing changes must restart hltv.
+alwaysApply: true
+---
+
+# Deploy after HLTV edits
+
+This repo is consumed as `cslivestats-hltv` (symlink from `/Users/Projects/cslivestats/node_modules`). Node loads **`lib/`**, not `src/`.
+
+After **any** source change:
+
+1. `npm run build` in this repo
+2. From `/Users/Projects/cslivestats`: `node src/scripts/pm2Restart.js <apps>` (never `pm2 restart --update-env`)
+
+`getMatches` / listing → restart **`hltv`**, `matchesCron`, `updateWorker`. Skipping `hltv` leaves `/getMatches` on the old parser.
+
+`getMatch` / scorebot / `utils` → also `scraperWorker`.
