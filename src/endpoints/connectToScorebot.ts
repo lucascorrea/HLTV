@@ -281,7 +281,10 @@ type ConnectToScorebotParams = {
 }
 
 const SCOREBOT_HOST = 'scorebot'
-const SCOREBOT_DISCONNECT_GRACE_MS = 5_000
+// socket.io backoff tops out at 5s. A 5s grace races that timer and
+// disconnect() aborts the reconnect (2397696: close, no reopen, session
+// dead at +5s, three times, then 120s poll for the rest of the match).
+const SCOREBOT_DISCONNECT_GRACE_MS = 20_000
 const SCOREBOT_STREAM_BOOTSTRAP_MS = 15_000
 const SCOREBOT_STREAM_BOOTSTRAP_MAX_ATTEMPTS = 20
 const SERIES_MAP_PAGE_SCRAPE_MS = 20_000
@@ -1119,7 +1122,7 @@ const connectToScorebotWithPlaywright = async ({
       onOpen: () => {
         openScorebotSockets = 1
         clearDisconnectTimer()
-        status('scorebot socket open openSockets=1')
+        status('scorebot websocket open openSockets=1')
         if (socketReady && !receivedStreamData) {
           scheduleStreamBootstrap()
         }
@@ -1127,7 +1130,7 @@ const connectToScorebotWithPlaywright = async ({
       onClose: () => {
         openScorebotSockets = 0
         status(
-          `scorebot socket closed openSockets=0 hadStream=${receivedStreamData} ` +
+          `scorebot websocket closed openSockets=0 hadStream=${receivedStreamData} ` +
             `mapEndedWatch=${mapEndedWatchActive}`
         )
         if (!socketReady || closed || !receivedStreamData) {
@@ -1137,7 +1140,7 @@ const connectToScorebotWithPlaywright = async ({
       },
       onError: (err) => {
         status(
-          `scorebot socket error: ${
+          `scorebot websocket error: ${
             err instanceof Error ? err.message : String(err)
           }`
         )

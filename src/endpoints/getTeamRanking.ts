@@ -30,6 +30,27 @@ export interface GetTeamArguments {
   country?: string
 }
 
+/**
+ * Latest ranking lives at `/ranking/teams/`. Empty path segments
+ * (`/ranking/teams///`) are rejected with HTTP 400 Ambiguous URI.
+ */
+export function buildTeamRankingUrl({
+  year,
+  month,
+  day,
+}: Pick<GetTeamArguments, 'year' | 'month' | 'day'> = {}): string {
+  const segments: Array<string | number> = []
+  if (year != null) {
+    segments.push(year)
+    if (month) {
+      segments.push(month)
+      if (day != null) segments.push(day)
+    }
+  }
+  const suffix = segments.length ? `/${segments.join('/')}` : '/'
+  return `https://www.hltv.org/ranking/teams${suffix}`
+}
+
 export const getTeamRanking =
   (config: HLTVConfig) =>
   async ({ year, month, day, country }: GetTeamArguments = {}): Promise<
@@ -37,9 +58,7 @@ export const getTeamRanking =
   > => {
     let $ = HLTVScraper(
       await fetchPage(
-        `https://www.hltv.org/ranking/teams/${year ?? ''}/${month ?? ''}/${
-          day ?? ''
-        }`,
+        buildTeamRankingUrl({ year, month, day }),
         config.loadPage,
         config.loadPageFlareSolverr
       )

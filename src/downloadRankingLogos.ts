@@ -369,6 +369,10 @@ async function runMatchId(matchId: number, iosExistingKeys: Set<string>): Promis
 
 async function runRanking(iosExistingKeys: Set<string>): Promise<void> {
   const ranking = await HLTV.getTeamRanking()
+  console.log(`[ranking] ${ranking.length} times`)
+  if (ranking.length === 0) {
+    throw new Error('ranking vazio — HLTV.getTeamRanking() não devolveu times')
+  }
   for (const row of ranking) {
     const { team } = row
     if (team.id == null) {
@@ -494,8 +498,14 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
+  main()
+    .then(() => {
+      // FlareSolverr axios keep-alive would otherwise hold the event loop open
+      // after the ranking list comes back empty or the downloads finish.
+      process.exit(0)
+    })
+    .catch((err) => {
+      console.error(err)
+      process.exit(1)
+    })
 }

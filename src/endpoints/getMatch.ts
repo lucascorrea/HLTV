@@ -529,6 +529,10 @@ function getEvent($: HLTVPage): Event {
   }
 }
 
+function isUsableDecimalOdd(value: number): boolean {
+  return Number.isFinite(value) && value > 1
+}
+
 function getOdds($: HLTVPage): ProviderOdds[] {
   return $('tr.provider:not(.hidden)')
     .toArray()
@@ -556,30 +560,29 @@ function getOdds($: HLTVPage): ProviderOdds[] {
         team2: convertOdds ? percentageToDecimalOdd(oddTeam2) : oddTeam2
       }
     })
+    .filter((row) => isUsableDecimalOdd(row.team1) && isUsableDecimalOdd(row.team2))
 }
 
 function getCommunityOdds($: HLTVPage): ProviderOdds | undefined {
-  if ($('.pick-a-winner').exists()) {
-    return {
-      provider: 'community',
-      team1: percentageToDecimalOdd(
-        Number(
-          $('.pick-a-winner-team.team1 > .percentage')
-            .first()
-            .text()
-            .replace('%', '')
-        )
-      ),
-      team2: percentageToDecimalOdd(
-        Number(
-          $('.pick-a-winner-team.team2 > .percentage')
-            .first()
-            .text()
-            .replace('%', '')
-        )
-      )
-    }
-  }
+  if (!$('.pick-a-winner').exists()) return undefined
+  const team1 = percentageToDecimalOdd(
+    Number(
+      $('.pick-a-winner-team.team1 > .percentage')
+        .first()
+        .text()
+        .replace('%', '')
+    )
+  )
+  const team2 = percentageToDecimalOdd(
+    Number(
+      $('.pick-a-winner-team.team2 > .percentage')
+        .first()
+        .text()
+        .replace('%', '')
+    )
+  )
+  if (!isUsableDecimalOdd(team1) || !isUsableDecimalOdd(team2)) return undefined
+  return { provider: 'community', team1, team2 }
 }
 
 async function fillLiveMapsFromScorebot({

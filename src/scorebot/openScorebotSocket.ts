@@ -69,13 +69,19 @@ export const openScorebotSocket = ({
     Referer: 'https://www.hltv.org/'
   }
 
+  // Polling is what surfaces `xhr poll error` and drops the map.
+  // Flare cookies + UA go on the websocket handshake. No XHR transport.
   const socket = io.connect(url, {
     forceNew: true,
     reconnection,
     timeout: 20_000,
+    transports: ['websocket'],
+    // Node 23 exposes a global WebSocket that cannot send Cookie.
+    // forceNode uses the `ws` package so the Flare clearance is actually sent.
+    forceNode: true,
     extraHeaders: headers,
     transportOptions: {
-      polling: { extraHeaders: headers }
+      websocket: { extraHeaders: headers }
     }
   } as never)
 
