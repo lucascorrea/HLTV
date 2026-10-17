@@ -58,6 +58,13 @@ export interface FullTeam {
   recentResults?: TeamMatchResult[]
 }
 
+/** `#3(#1)` → 3. The first number is the HLTV world rank; the parenthesis is regional. */
+export function parseProfileWorldRank(raw: string | undefined): number | undefined {
+  if (!raw) return undefined
+  const match = raw.match(/#\s*(\d+)/) || raw.match(/(\d+)/)
+  return parseNumber(match?.[1])
+}
+
 export const getTeam =
   (config: HLTVConfig) =>
   async ({ id }: { id: number }): Promise<FullTeam> => {
@@ -78,14 +85,14 @@ export const getTeam =
     const facebook = $('.facebook').parent().attr('href')
     const twitter = $('.twitter').parent().attr('href')
     const instagram = $('.instagram').parent().attr('href')
-    const worldRankRow = $('.profile-team-stat').filter((_, el) =>
-      (el.text() || '').toLowerCase().includes('world ranking')
+    const worldRankRow = $('.profile-team-stat').filter((_, el) => {
+      const label = (el.text() || '').toLowerCase()
+      return label.includes('world ranking') && !label.includes('valve ranking')
+    })
+    // `.right` is `#3` plus a regional link `(#1)`. The first anchor is the HLTV rank.
+    const rank = parseProfileWorldRank(
+      worldRankRow.find('.right a').first().text() || worldRankRow.find('.right').text()
     )
-    const rankText =
-      worldRankRow.find('.right').text() ||
-      $('.profile-team-stat .right').eq(1).text() ||
-      $('.profile-team-stat .right').first().text()
-    const rank = rankText ? parseNumber(rankText.replace('#', '')) : undefined
 
     const players = $('.players-table tbody tr')
       .toArray()
